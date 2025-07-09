@@ -1,0 +1,77 @@
+name: Deploy Rule Builder to Firebase Hosting
+
+on:
+  push:
+    branches:
+      - main
+      - stage
+      - prod
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔄 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: 📄 Create .env.local file and Firebase key from GitHub Secrets
+        run: |
+          case "${{ github.ref_name }}" in
+            main)
+              echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY_DEV }}" >> .env.local
+              echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN_DEV }}" >> .env.local
+              echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID_DEV }}" >> .env.local
+              echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}" >> .env.local
+              echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}" >> .env.local
+              echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID_DEV }}" >> .env.local
+              echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID_DEV }}" >> .env.local
+              echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_APPFIG_DEV }}' > "${{ github.workspace }}/firebase-key.json"
+              echo "FIREBASE_PROJECT_ID=appfig-dev" >> $GITHUB_ENV
+              ;;
+            stage)
+              echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY_STAGE }}" >> .env.local
+              echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN_STAGE }}" >> .env.local
+              echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID_STAGE }}" >> .env.local
+              echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_STAGE }}" >> .env.local
+              echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_STAGE }}" >> .env.local
+              echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID_STAGE }}" >> .env.local
+              echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID_STAGE }}" >> .env.local
+              echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_APPFIG_STAGE }}' > "${{ github.workspace }}/firebase-key.json"
+              echo "FIREBASE_PROJECT_ID=appfig-stage" >> $GITHUB_ENV
+              ;;
+            prod)
+              echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY_PROD }}" >> .env.local
+              echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN_PROD }}" >> .env.local
+              echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID_PROD }}" >> .env.local
+              echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_PROD }}" >> .env.local
+              echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_PROD }}" >> .env.local
+              echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID_PROD }}" >> .env.local
+              echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID_PROD }}" >> .env.local
+              echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_APPFIG_PROD }}' > "${{ github.workspace }}/firebase-key.json"
+              echo "FIREBASE_PROJECT_ID=appfig-prod" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "❌ Unsupported branch: ${{ github.ref_name }}"
+              exit 1
+              ;;
+          esac
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Build frontend
+        run: npm run build
+
+      - name: 📥 Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: 🚀 Deploy to Firebase Hosting
+        run: npx firebase deploy --only hosting:frontend --project ${{ env.FIREBASE_PROJECT_ID }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: "${{ github.workspace }}/firebase-key.json"

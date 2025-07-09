@@ -1,0 +1,40 @@
+{
+  "show_power_up_3": [
+    {
+      "conditions": [
+        { "event": "level_complete", "match": { "level": { ">=": 1 } } },
+        { "event": "level_complete", "match": { "level": { ">=": 2 } } },
+        { "event": "level_failed", "match": { "level": { ">=": 3 } } }
+      ],
+      "sequential": true,
+      "value": "true"
+    }
+  ],
+  "hint_enabled": [
+    {
+      "conditions": [
+        { "event": "level_failed", "count": { ">=": 2 } }
+      ],
+      "sequential": false,
+      "value": "true"
+    }
+  ],
+  "skin_theme": [
+    {
+      "conditions": [
+        { "event": "watch_ad", "count": { ">=": 2 } }
+      ],
+      "sequential": false,
+      "value": "retro"
+    }
+  ],
+  "extra_lives_offer": [
+    {
+      "conditions": [
+        { "event": "level_failed", "count": { ">=": 3 } }
+      ],
+      "sequential": false,
+      "value": "true"
+    }
+  ]
+}
