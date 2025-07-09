@@ -43,10 +43,6 @@ type UserConditions = {
   custom_properties?: {
     [key: string]: { [operator: string]: string | number };
   };
-} & {
-  custom_properties?: {
-    [key: string]: { [operator: string]: string | number };
-  };
 };
 
 type RuleSet = {
@@ -102,7 +98,7 @@ const prebuiltTemplates = [
       }
     ]
   }
-];
+] as const;
 
 export default function RuleBuilder() {
   const [user, setUser] = useState<User | null>(null);
@@ -344,7 +340,7 @@ export default function RuleBuilder() {
       value: 'true',
       conditions: {
         events: [],
-        user: []
+        user: {}
       }
     }];
 
@@ -382,7 +378,10 @@ export default function RuleBuilder() {
         if (!result[condition.property]) {
           result[condition.property] = {};
         }
-        result[condition.property]![condition.operator] = value;
+        const propertyObj = result[condition.property];
+        if (propertyObj) {
+          propertyObj[condition.operator] = value;
+        }
       }
     });
 
