@@ -39,7 +39,7 @@ type UserCondition = {
 };
 
 type UserConditions = {
-  [key: string]: { [operator: string]: string | number };
+  [key: string]: { [operator: string]: string | number } | undefined;
   custom_properties?: {
     [key: string]: { [operator: string]: string | number };
   };
@@ -352,7 +352,7 @@ export default function RuleBuilder() {
     try {
       await setDoc(docRef, { rules }, { merge: true });
       setStatusMessage('✅ Rule created successfully! Now add conditions.');
-      setRuleSets([{ value: 'true', sequential: false, conditions: { events: [], user: [] } }]);
+      setRuleSets([{ value: 'true', sequential: false, conditions: { events: [], user: {} } }]);
       setUserConditions({});
       setRawJSON(JSON.stringify({ [featureName]: emptyRule }, null, 2));
       setAllFeatureNames(prev => [...prev, featureName]);
@@ -535,6 +535,7 @@ export default function RuleBuilder() {
 
   const addRuleSet = () => {
     setRuleSets([...ruleSets, { value: '', sequential: false, conditions: { events: [], user: [] } }]);
+    setRuleSets([...ruleSets, { value: '', sequential: false, conditions: { events: [], user: {} } }]);
   };
 
   const duplicateRuleSet = (index: number) => {
