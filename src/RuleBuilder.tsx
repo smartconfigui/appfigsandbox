@@ -43,6 +43,10 @@ type UserConditions = {
   custom_properties?: {
     [key: string]: { [operator: string]: string | number };
   };
+} & {
+  custom_properties?: {
+    [key: string]: { [operator: string]: string | number };
+  };
 };
 
 type RuleSet = {
@@ -378,7 +382,7 @@ export default function RuleBuilder() {
         if (!result[condition.property]) {
           result[condition.property] = {};
         }
-        result[condition.property][condition.operator] = value;
+        result[condition.property]![condition.operator] = value;
       }
     });
 
@@ -534,7 +538,6 @@ export default function RuleBuilder() {
   };
 
   const addRuleSet = () => {
-    setRuleSets([...ruleSets, { value: '', sequential: false, conditions: { events: [], user: [] } }]);
     setRuleSets([...ruleSets, { value: '', sequential: false, conditions: { events: [], user: {} } }]);
   };
 
