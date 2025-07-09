@@ -28,41 +28,9 @@ const userPropertyOptions = [
   'first_purchase_date'
 ] as const;
 
-// User property options
-const userPropertyOptions = [
-  'country',
-  'app_version',
-  'language',
-  'device_type',
-  'os_version',
-  'install_date',
-  'last_session_date'
-] as const;
-
-const userOperatorOptions = [
-  'equals',
-  'not_equals',
-  'gte',
-  'lte',
-  'gt',
-  'lt',
-  'contains',
-  'not_contains'
-] as const;
-
 // Updated TypeScript types
 type MatchParam = { key: string; value: string; operator: string };
 type EventCondition = { event: string; match: MatchParam[]; count: string; countOperator: string };
-type UserCondition = { property: string; operator: string; value: string };
-type RuleSet = { 
-  value: string | number | boolean; 
-  sequential: boolean; 
-  conditions: {
-    events?: EventCondition[];
-    user?: UserCondition[];
-  };
-};
-
 type UserCondition = {
   property: string;
   operator: string;
@@ -1629,7 +1597,7 @@ export default function RuleBuilder() {
                             fontSize: '0.9rem'
                           }}
                         >
-                          {userOperatorOptions.map((op) => (
+                          {userPropertyOperatorOptions.map((op) => (
                             <option key={op} value={op}>{op}</option>
                           ))}
                         </select>
