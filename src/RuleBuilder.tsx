@@ -4,55 +4,69 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 
-const eventOptions = ['level_complete', 'level_failed', 'watch_ad'] as const;
+const fieldStyle = {
+  padding: '0.5rem',
+  borderRadius: '6px',
+  border: '1px solid #ddd',
+  fontSize: '0.9rem',
+  minWidth: '100px'
+};
+
+const keyOptions: Record<keyof ConditionGroup, string[]> = {
+  events: ['level_complete', 'level_failed', 'watch_ad'],
+  user_properties: ['subscriber_segment', 'is_paying_user'],
+  device: [
+    'country', 'region', 'language', 'timezone',
+    'os', 'os_version', 'device_model', 'is_vpn'
+  ]
+};
 
 const defaultParamOptions: Record<string, string[]> = {
   level_failed: ['level'],
   level_complete: ['level'],
   watch_ad: ['ad_type'],
+  subscriber_segment: ['tier'],
+  is_paying_user: [],
+  os: ['version'],
+  country: [],
+  region: [],
+  language: [],
+  timezone: [],
+  os_version: [],
+  device_model: [],
+  is_vpn: []
 };
 
-const operatorOptions = ['==', '>=', '<=', '>', '<'] as const;
+const operatorOptions = ['==', '>=', '<=', '>', '<', 'in', 'not in'] as const;
 const countOperatorOptions = ['==', '>=', '<=', '>', '<'] as const;
-const userPropertyOperatorOptions = ['equals', 'not_equals', 'gte', 'lte', 'gt', 'lt', 'contains', 'not_contains', 'days_since_gte', 'days_since_lte'] as const;
 
-const userPropertyOptions = [
-  'country',
-  'app_version', 
-  'language',
-  'device_type',
-  'os_version',
-  'install_date',
-  'last_login_date',
-  'registration_date',
-  'first_purchase_date'
-] as const;
-
-// Updated TypeScript types
-type MatchParam = { key: string; value: string; operator: string };
-type EventCondition = { event: string; match: MatchParam[]; count: string; countOperator: string };
-type UserCondition = {
-  property: string;
-  operator: string;
-  value: string;
-  isCustom?: boolean;
+type MatchParam = { 
+  key: string; 
+  value: string; 
+  operator: string;   
 };
 
-type UserConditions = {
-  [key: string]: { [operator: string]: string | number } | undefined;
-  custom_properties?: {
-    [key: string]: { [operator: string]: string | number };
-  };
+type Condition = {
+  key: string;
+  operator?: string;
+  match: MatchParam[];
+  count: string;
+  countOperator: string;
+  not?: boolean;
+};
+
+type ConditionGroup = {
+  events: Condition[];
+  user_properties: Condition[];
+  device: Condition[];
 };
 
 type RuleSet = {
-  value: string | number | boolean;
+  value: string;
   sequential: boolean;
-  conditions: {
-    events?: EventCondition[];
-    user?: UserConditions;
-  };
+  conditions: ConditionGroup;
 };
+
 
 const prebuiltTemplates = [
   {
@@ -65,40 +79,20 @@ const prebuiltTemplates = [
         conditions: {
           events: [
             {
-              event: 'level_complete',
+              key: 'level_complete',
               count: '1',
               countOperator: '>=',
               match: [{ key: 'level', value: '1', operator: '>=' }]
             }
           ],
-          user: [
-            {
-              property: 'install_date',
-              operator: 'days_since_gte',
-              value: '7'
-            }
-          ]
-        }
-      }
-    ]
-  },
-  {
-    featureName: 'country_feature',
-    label: 'Country-based Feature Template',
-    ruleSets: [
-      {
-        value: 'true',
-        sequential: false,
-        conditions: {
-          user: {
-            country: { equals: 'TR' },
-            app_version: { gte: '1.2.0' }
-          }
+          user_properties: [],
+          device: []
         }
       }
     ]
   }
-] as const;
+];
+
 
 export default function RuleBuilder() {
   const [user, setUser] = useState<User | null>(null);
@@ -115,9 +109,6 @@ export default function RuleBuilder() {
   const [statusMessage, setStatusMessage] = useState('');
   const [allFeatureNames, setAllFeatureNames] = useState<string[]>([]);
   const [aclError, setAclError] = useState('');
-
-  // UI state for user conditions
-  const [userConditions, setUserConditions] = useState<{ [ruleIdx: number]: UserCondition[] }>({});
 
   const isExistingFeature = allFeatureNames.includes(featureName);
   const hasAccess = selectedTenant && allowedTenants.includes(selectedTenant);
@@ -160,7 +151,6 @@ export default function RuleBuilder() {
       setFeatureName('');
       setRuleSets([]);
       setRawJSON('');
-      setUserConditions({});
     }
   }, [selectedTenant, hasAccess]);
 
@@ -173,7 +163,6 @@ export default function RuleBuilder() {
     } else {
       setRuleSets([]);
       setRawJSON('');
-      setUserConditions({});
     }
   }, [featureName, allFeatureNames, user, selectedTenant, hasAccess]);
 
@@ -216,109 +205,47 @@ export default function RuleBuilder() {
     }
   };
 
-  const parseUserConditionsFromData = (userData: UserConditions): UserCondition[] => {
-    const conditions: UserCondition[] = [];
-    
-    Object.entries(userData).forEach(([property, operatorObj]) => {
-      if (property === 'custom_properties' && typeof operatorObj === 'object') {
-        Object.entries(operatorObj).forEach(([customProp, customOperatorObj]) => {
-          if (typeof customOperatorObj === 'object') {
-            Object.entries(customOperatorObj).forEach(([operator, value]) => {
-              conditions.push({
-                property: customProp,
-                operator,
-                value: String(value),
-                isCustom: true
-              });
-            });
-          }
-        });
-      } else if (typeof operatorObj === 'object') {
-        Object.entries(operatorObj).forEach(([operator, value]) => {
-          conditions.push({
-            property,
-            operator,
-            value: String(value),
-            isCustom: false
-          });
-        });
-      }
-    });
-    
-    return conditions;
-  };
-
   const loadFeatureRule = async (feature: string) => {
     if (!user || !selectedTenant || !hasAccess) return;
 
     const docRef = doc(db, 'rules', selectedTenant);
     const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
+       if (snapshot.exists()) {
       const ruleData = snapshot.data()?.rules?.[feature];
       if (Array.isArray(ruleData)) {
-        const parsedRuleSets: RuleSet[] = [];
-        const newUserConditions: { [ruleIdx: number]: UserCondition[] } = {};
+        const parsedRuleSets: RuleSet[] = ruleData.map((r: any) => {
+          const eventConditions = r.conditions?.events || [];
+          const userConditions = r.conditions?.user_properties || [];
+          const deviceConditions = r.conditions?.device || [];
 
-        ruleData.forEach((r: any, index: number) => {
-          // Handle new format with conditions.events and conditions.user
-          if (r.conditions && typeof r.conditions === 'object' && !Array.isArray(r.conditions)) {
-            const eventConditions = (r.conditions.events || []).map((c: any) => ({
-              event: c.event,
-              count: c.count ? String(Object.values(c.count as Record<string, any>)[0]) : '',
-              countOperator: c.count ? Object.keys(c.count as Record<string, any>)[0] : '==',
-              match: c.match
-                ? Object.entries(c.match).map(([key, obj]) => ({
-                    key,
-                    operator: Object.keys(obj as Record<string, any>)[0],
-                    value: String(Object.values(obj as Record<string, any>)[0])
-                  }))
-                : []
-            }));
+          const parseCondition = (c: any): Condition => ({
+            key: c.key ?? c.event, // fallback for old rules if needed
+            count: c.count ? String(Object.values(c.count as Record<string, any>)[0]) : '',
+            countOperator: c.count ? Object.keys(c.count as Record<string, any>)[0] : '==',
+            match: c.match
+              ? Object.entries(c.match).map(([key, obj]) => ({
+                  key,
+                  operator: Object.keys(obj as Record<string, any>)[0],
+                  value: String(Object.values(obj as Record<string, any>)[0])
+                }))
+              : []
+          });
 
-            parsedRuleSets.push({
-              value: r.value ?? '',
-              sequential: !!r.sequential,
-              conditions: {
-                events: eventConditions,
-                user: r.conditions.user || {}
-              }
-            });
-
-            // Parse user conditions for UI
-            if (r.conditions.user) {
-              newUserConditions[index] = parseUserConditionsFromData(r.conditions.user);
-            }
-          } else {
-            // Handle legacy format - upgrade to new format
-            const legacyConditions = (r.conditions || []).map((c: any) => ({
-              event: c.event,
-              count: c.count ? String(Object.values(c.count as Record<string, any>)[0]) : '',
-              countOperator: c.count ? Object.keys(c.count as Record<string, any>)[0] : '==',
-              match: c.match
-                ? Object.entries(c.match).map(([key, obj]) => ({
-                    key,
-                    operator: Object.keys(obj as Record<string, any>)[0],
-                    value: String(Object.values(obj as Record<string, any>)[0])
-                  }))
-                : []
-            }));
-
-            parsedRuleSets.push({
-              value: r.value ?? '',
-              sequential: !!r.sequential,
-              conditions: {
-                events: legacyConditions
-              }
-            });
-          }
-        });
+  return {
+    value: String(r.value ?? ''),
+    sequential: !!r.sequential,
+    conditions: {
+      events: eventConditions.map(parseCondition),
+      user_properties: userConditions.map(parseCondition),
+      device: deviceConditions.map(parseCondition)
+    }
+  };
+});
 
         setRuleSets(parsedRuleSets);
-        setUserConditions(newUserConditions);
         setRawJSON(JSON.stringify({ [feature]: ruleData }, null, 2));
       } else {
         setRuleSets([]);
-        setUserConditions({});
         setRawJSON('');
       }
     }
@@ -340,7 +267,8 @@ export default function RuleBuilder() {
       value: 'true',
       conditions: {
         events: [],
-        user: {}
+        user_properties: [],
+        device: []
       }
     }];
 
@@ -352,9 +280,9 @@ export default function RuleBuilder() {
     try {
       await setDoc(docRef, { rules }, { merge: true });
       setStatusMessage('✅ Rule created successfully! Now add conditions.');
-      setRuleSets([{ value: 'true', sequential: false, conditions: { events: [], user: {} } }]);
-      setUserConditions({});
-      setRawJSON(JSON.stringify({ [featureName]: emptyRule }, null, 2));
+      const finalPayload = { [featureName]: emptyRule };
+      setRuleSets(emptyRule);
+      setRawJSON(JSON.stringify(finalPayload, null, 2));
       setAllFeatureNames(prev => [...prev, featureName]);
     } catch (err) {
       console.error(err);
@@ -362,78 +290,68 @@ export default function RuleBuilder() {
     }
   };
 
-  const buildUserConditionsObject = (conditions: UserCondition[]): UserConditions => {
-    const result: UserConditions = {};
-    const customProps: { [key: string]: { [operator: string]: string | number } } = {};
-
-    conditions.forEach(condition => {
-      const value = isNaN(Number(condition.value)) ? condition.value : Number(condition.value);
-      
-      if (condition.isCustom) {
-        if (!customProps[condition.property]) {
-          customProps[condition.property] = {};
-        }
-        customProps[condition.property][condition.operator] = value;
-      } else {
-        if (!result[condition.property]) {
-          result[condition.property] = {};
-        }
-        const propertyObj = result[condition.property];
-        if (propertyObj) {
-          propertyObj[condition.operator] = value;
-        }
-      }
-    });
-
-    if (Object.keys(customProps).length > 0) {
-      result.custom_properties = customProps;
-    }
-
-    return result;
-  };
-
   const saveRule = async () => {
     if (!featureName || ruleSets.length === 0 || !selectedTenant || !hasAccess) {
-      alert('Please ensure you have a feature name, at least one rule set, and access to the selected package.');
+      alert('Please ensure you have a feature name, at least one rule set with conditions, and access to the selected package.');
       return;
     }
 
-    const formatted = ruleSets.map((rule, ruleIdx) => {
-      const result: any = {
-        sequential: rule.sequential,
-        value: isNaN(Number(rule.value)) ? rule.value : Number(rule.value),
-        conditions: {}
-      };
+const formatted = ruleSets.map((rule) => {
+  const serializeGroup = (group: Condition[]) => {
+    return group.map((c) => {
+      const result: any = {};
 
-      // Add event conditions
-      if (rule.conditions.events && rule.conditions.events.length > 0) {
-        const formattedEventConditions = rule.conditions.events.map((c) => {
-          const base: any = { event: c.event };
-          if (c.count) base.count = { [c.countOperator]: Number(c.count) };
-          if (c.match.length > 0 && c.match.some((m) => m.key && m.value)) {
-            const match: Record<string, any> = {};
-            c.match.forEach(({ key, value, operator }) => {
-              if (key && value !== '') {
-                match[key] = {
-                  [operator]: isNaN(Number(value)) ? value : Number(value)
-                };
-              }
-            });
-            base.match = match;
-          }
-          return base;
-        });
-        result.conditions.events = formattedEventConditions;
+      // Key and optional operator
+      result.key = c.key;
+      if (c.operator && c.operator !== '==') {
+        result.operator = c.operator;
       }
 
-      // Add user conditions
-      const ruleUserConditions = userConditions[ruleIdx] || [];
-      if (ruleUserConditions.length > 0) {
-        result.conditions.user = buildUserConditionsObject(ruleUserConditions);
+      // NOT logic
+      if (c.not) {
+        result.not = true;
+      }
+
+      // Count/value field
+      if (c.count) {
+        const parsed = ['in', 'not in'].includes(c.operator || '')
+          ? c.count.split(',').map(v => v.trim())
+          : isNaN(Number(c.count)) ? c.count : Number(c.count);
+        result.count = { [c.countOperator]: parsed };
+      }
+
+      // Param block (renamed from match)
+      if (c.match.length > 0 && c.match.some((m) => m.key && m.value)) {
+        const param: Record<string, any> = {};
+        c.match.forEach(({ key, value, operator }) => {
+          if (key && value !== '') {
+            const parsed = ['in', 'not in'].includes(operator)
+              ? value.split(',').map(v => v.trim())
+              : isNaN(Number(value)) ? value : Number(value);
+            param[key] = { [operator]: parsed };
+          }
+        });
+        result.param = param;
       }
 
       return result;
     });
+  };
+
+
+
+  return {
+    value: isNaN(Number(rule.value)) ? rule.value : Number(rule.value),
+    sequential: rule.sequential,
+    conditions: {
+      events: serializeGroup(rule.conditions.events),
+      user_properties: serializeGroup(rule.conditions.user_properties),
+      device: serializeGroup(rule.conditions.device)
+    }
+  };
+});
+
+
 
     const docRef = doc(db, 'rules', selectedTenant);
     const snapshot = await getDoc(docRef);
@@ -475,7 +393,7 @@ export default function RuleBuilder() {
         delete rules[featureName];
         
         try {
-          await setDoc(docRef, { rules }, { merge: true });
+          await setDoc(docRef, { rules });
           setAllFeatureNames(prev => {
             const updated = prev.filter(name => name !== featureName);
             return [...updated, newFeatureName];
@@ -505,12 +423,11 @@ export default function RuleBuilder() {
       delete rules[featureName];
       
       try {
-        await setDoc(docRef, { rules }, { merge: true });
+        await setDoc(docRef, { rules });
         setAllFeatureNames(prev => prev.filter(name => name !== featureName));
         setFeatureName('');
         setNewFeatureName('');
         setRuleSets([]);
-        setUserConditions({});
         setRawJSON('');
         setStatusMessage('✅ Feature deleted successfully!');
       } catch (err) {
@@ -523,21 +440,22 @@ export default function RuleBuilder() {
   const applyPrebuiltTemplate = (template: typeof prebuiltTemplates[0]) => {
     setFeatureName(template.featureName);
     setRuleSets(template.ruleSets);
-    
-    // Parse user conditions from template
-    const newUserConditions: { [ruleIdx: number]: UserCondition[] } = {};
-    template.ruleSets.forEach((ruleSet, index) => {
-      if (ruleSet.conditions.user) {
-        newUserConditions[index] = parseUserConditionsFromData(ruleSet.conditions.user);
-      }
-    });
-    setUserConditions(newUserConditions);
-    
     setRawJSON(JSON.stringify({ [template.featureName]: template.ruleSets }, null, 2));
   };
 
   const addRuleSet = () => {
-    setRuleSets([...ruleSets, { value: '', sequential: false, conditions: { events: [], user: {} } }]);
+  setRuleSets([
+    ...ruleSets,
+    {
+      value: '',
+      sequential: false,
+      conditions: {
+        events: [],
+        user_properties: [],
+        device: []
+      }
+    }
+    ]);
   };
 
   const duplicateRuleSet = (index: number) => {
@@ -546,89 +464,76 @@ export default function RuleBuilder() {
     const updated = [...ruleSets];
     updated.splice(index + 1, 0, duplicated);
     setRuleSets(updated);
-
-    // Duplicate user conditions too
-    if (userConditions[index]) {
-      const updatedUserConditions = { ...userConditions };
-      // Shift all indices after the insertion point
-      Object.keys(updatedUserConditions).forEach(key => {
-        const idx = parseInt(key);
-        if (idx > index) {
-          updatedUserConditions[idx + 1] = updatedUserConditions[idx];
-          delete updatedUserConditions[idx];
-        }
-      });
-      updatedUserConditions[index + 1] = [...userConditions[index]];
-      setUserConditions(updatedUserConditions);
-    }
   };
 
   const deleteRuleSet = (index: number) => {
-    setRuleSets(ruleSets.filter((_, i) => i !== index));
-    
-    // Update user conditions indices
-    const updatedUserConditions = { ...userConditions };
-    delete updatedUserConditions[index];
-    
-    // Shift all indices after the deleted index
-    Object.keys(updatedUserConditions).forEach(key => {
-      const idx = parseInt(key);
-      if (idx > index) {
-        updatedUserConditions[idx - 1] = updatedUserConditions[idx];
-        delete updatedUserConditions[idx];
-      }
-    });
-    setUserConditions(updatedUserConditions);
-  };
+    const updated = ruleSets.filter((_, i) => i !== index);
+    setRuleSets(updated);
 
-  const addEventCondition = (ruleIdx: number) => {
+    // Save the new state to Firestore
+    setTimeout(() => saveRule(), 0); // defer save until state updates
+  };
+  
+  const addCondition = (ruleIdx: number, group: keyof ConditionGroup) => {
     const updated = [...ruleSets];
-    if (!updated[ruleIdx].conditions.events) {
-      updated[ruleIdx].conditions.events = [];
-    }
-    updated[ruleIdx].conditions.events!.push({ event: '', match: [], count: '', countOperator: '==' });
+    updated[ruleIdx].conditions[group].push({ key: '', match: [], count: '', countOperator: '==' });
     setRuleSets(updated);
   };
 
-  const deleteEventCondition = (ruleIdx: number, condIdx: number) => {
+
+  const deleteCondition = (ruleIdx: number, group: keyof ConditionGroup, condIdx: number) => {
     const updated = [...ruleSets];
-    if (updated[ruleIdx].conditions.events) {
-      updated[ruleIdx].conditions.events!.splice(condIdx, 1);
-    }
+    updated[ruleIdx].conditions[group].splice(condIdx, 1);
     setRuleSets(updated);
   };
 
-  const updateEventCondition = (ruleIdx: number, condIdx: number, field: string, value: string) => {
+
+  const updateCondition = (
+    ruleIdx: number,
+    group: keyof ConditionGroup,
+    condIdx: number,
+    field: keyof Condition,
+    value: string
+  ) => {
     const updated = [...ruleSets];
-    if (updated[ruleIdx].conditions.events && updated[ruleIdx].conditions.events![condIdx]) {
-      (updated[ruleIdx].conditions.events![condIdx] as any)[field] = value;
-    }
+    (updated[ruleIdx].conditions[group][condIdx] as any)[field] = value;
     setRuleSets(updated);
   };
 
-  const addMatchParam = (ruleIdx: number, condIdx: number) => {
+
+
+  const addMatchParam = (ruleIdx: number, group: keyof ConditionGroup, condIdx: number) => {
     const updated = [...ruleSets];
-    if (updated[ruleIdx].conditions.events && updated[ruleIdx].conditions.events![condIdx]) {
-      updated[ruleIdx].conditions.events![condIdx].match.push({ key: '', value: '', operator: '==' });
-    }
+    updated[ruleIdx].conditions[group][condIdx].match.push({ key: '', value: '', operator: '==' });
     setRuleSets(updated);
   };
 
-  const deleteMatchParam = (ruleIdx: number, condIdx: number, matchIdx: number) => {
+
+  const deleteMatchParam = (
+    ruleIdx: number,
+    group: keyof ConditionGroup,
+    condIdx: number,
+    matchIdx: number
+  ) => {
     const updated = [...ruleSets];
-    if (updated[ruleIdx].conditions.events && updated[ruleIdx].conditions.events![condIdx]) {
-      updated[ruleIdx].conditions.events![condIdx].match.splice(matchIdx, 1);
-    }
+    updated[ruleIdx].conditions[group][condIdx].match.splice(matchIdx, 1);
     setRuleSets(updated);
   };
 
-  const updateMatchParam = (ruleIdx: number, condIdx: number, matchIdx: number, field: string, value: string) => {
+
+  const updateMatchParam = (
+    ruleIdx: number,
+    group: keyof ConditionGroup,
+    condIdx: number,
+    matchIdx: number,
+    field: keyof MatchParam,
+    value: string
+  ) => {
     const updated = [...ruleSets];
-    if (updated[ruleIdx].conditions.events && updated[ruleIdx].conditions.events![condIdx] && updated[ruleIdx].conditions.events![condIdx].match[matchIdx]) {
-      (updated[ruleIdx].conditions.events![condIdx].match[matchIdx] as any)[field] = value;
-    }
+    (updated[ruleIdx].conditions[group][condIdx].match[matchIdx] as any)[field] = value;
     setRuleSets(updated);
   };
+
 
   const updateRuleSetValue = (ruleIdx: number, value: string) => {
     const updated = [...ruleSets];
@@ -640,35 +545,6 @@ export default function RuleBuilder() {
     const updated = [...ruleSets];
     updated[ruleIdx].sequential = !updated[ruleIdx].sequential;
     setRuleSets(updated);
-  };
-
-  // User condition functions
-  const addUserCondition = (ruleIdx: number) => {
-    const updated = { ...userConditions };
-    if (!updated[ruleIdx]) {
-      updated[ruleIdx] = [];
-    }
-    updated[ruleIdx].push({ property: '', operator: 'equals', value: '', isCustom: false });
-    setUserConditions(updated);
-  };
-
-  const deleteUserCondition = (ruleIdx: number, condIdx: number) => {
-    const updated = { ...userConditions };
-    if (updated[ruleIdx]) {
-      updated[ruleIdx].splice(condIdx, 1);
-      if (updated[ruleIdx].length === 0) {
-        delete updated[ruleIdx];
-      }
-    }
-    setUserConditions(updated);
-  };
-
-  const updateUserCondition = (ruleIdx: number, condIdx: number, field: string, value: string | boolean) => {
-    const updated = { ...userConditions };
-    if (updated[ruleIdx] && updated[ruleIdx][condIdx]) {
-      (updated[ruleIdx][condIdx] as any)[field] = value;
-    }
-    setUserConditions(updated);
   };
   
   if (!user) {
@@ -698,7 +574,7 @@ export default function RuleBuilder() {
             fontSize: '1.8rem',
             fontWeight: '600'
           }}>
-            🔐 SmartConfig Access
+            🔐 AppFig Access
           </h2>
           <input
             type="email"
@@ -827,7 +703,7 @@ export default function RuleBuilder() {
             fontSize: '1.8rem',
             fontWeight: '700'
           }}>
-            ⚡ SmartConfig Rule Builder
+            🧠 AppFig
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <span style={{ 
@@ -1275,7 +1151,7 @@ export default function RuleBuilder() {
                       onChange={() => updateRuleSetSequential(ruleIdx)}
                       style={{ transform: 'scale(1.2)' }}
                     />
-                    Sequential Order (Events Only)
+                    Sequential Order
                   </label>
                   
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
@@ -1318,345 +1194,291 @@ export default function RuleBuilder() {
                   </div>
                 </div>
 
-                {/* Event Conditions Section */}
-                <div style={{ marginBottom: '2rem' }}>
-                  <h4 style={{ 
-                    margin: '0 0 1rem 0',
-                    color: '#555',
-                    fontSize: '1.1rem',
-                    fontWeight: '600'
-                  }}>
-                    📋 Event Conditions:
-                  </h4>
-                  
-                  {rule.conditions.events?.map((cond, condIdx) => (
-                    <div key={condIdx} style={{ 
-                      marginBottom: '1rem',
-                      padding: '1rem',
-                      border: '1px solid #e1e8ed',
-                      borderRadius: '10px',
-                      background: 'white'
-                    }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        gap: '0.5rem', 
-                        marginBottom: '1rem', 
-                        alignItems: 'center', 
-                        flexWrap: 'wrap'
-                      }}>
-                        <select
-                          value={cond.event}
-                          onChange={(e) => updateEventCondition(ruleIdx, condIdx, 'event', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            fontSize: '0.9rem'
-                          }}
-                        >
-                          <option value="">Select Event</option>
-                          {eventOptions.map((e) => (
-                            <option key={e} value={e}>{e}</option>
-                          ))}
-                        </select>
-                        
-                        <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#555' }}>
-                          Count:
-                        </span>
-                        <select
-                          value={cond.countOperator}
-                          onChange={(e) => updateEventCondition(ruleIdx, condIdx, 'countOperator', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            fontSize: '0.9rem'
-                          }}
-                        >
-                          {countOperatorOptions.map((op) => (
-                            <option key={op} value={op}>{op}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          placeholder="Count"
-                          value={cond.count}
-                          onChange={(e) => updateEventCondition(ruleIdx, condIdx, 'count', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            width: '80px',
-                            fontSize: '0.9rem'
-                          }}
-                        />
-                        
-                        <button 
-                          onClick={() => deleteEventCondition(ruleIdx, condIdx)} 
-                          style={{ 
-                            padding: '0.5rem 1rem',
-                            borderRadius: '6px',
-                            border: 'none',
-                            background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
-                            color: 'white',
-                            fontSize: '0.8rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            marginLeft: 'auto'
-                          }}
-                        >
-                          🗑
-                        </button>
-                      </div>
+                <h4 style={{ 
+                  margin: '0 0 1rem 0',
+                  color: '#555',
+                  fontSize: '1.1rem',
+                  fontWeight: '600'
+                }}>
+                  📋 Conditions:
+                </h4>
+                
+   {(['events', 'user_properties', 'device'] as const).map((groupKey) => (
+  <div key={groupKey} style={{ marginBottom: '1.5rem' }}>
+    <h4 style={{ 
+      marginBottom: '0.5rem', 
+      fontSize: '1rem', 
+      color: '#444',
+      textTransform: 'capitalize' 
+    }}>
+      {groupKey.replace('_', ' ')} Conditions
+    </h4>
 
-                      <div style={{ marginLeft: '1rem' }}>
-                        <strong style={{ fontSize: '0.9rem', color: '#555' }}>
-                          Match Parameters:
-                        </strong>
-                        {cond.match.map((m, mIdx) => (
-                          <div key={mIdx} style={{ 
-                            display: 'flex', 
-                            gap: '0.5rem', 
-                            marginTop: '0.5rem', 
-                            alignItems: 'center'
-                          }}>
-                            <select
-                              value={m.key}
-                              onChange={(e) => updateMatchParam(ruleIdx, condIdx, mIdx, 'key', e.target.value)}
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9rem'
-                              }}
-                            >
-                              <option value="">Select Param</option>
-                              {(defaultParamOptions[cond.event] || []).map((p) => (
-                                <option key={p} value={p}>{p}</option>
-                              ))}
-                            </select>
-                            <select
-                              value={m.operator}
-                              onChange={(e) => updateMatchParam(ruleIdx, condIdx, mIdx, 'operator', e.target.value)}
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9rem'
-                              }}
-                            >
-                              {operatorOptions.map((op) => (
-                                <option key={op} value={op}>{op}</option>
-                              ))}
-                            </select>
-                            <input
-                              value={m.value}
-                              placeholder="Value"
-                              onChange={(e) => updateMatchParam(ruleIdx, condIdx, mIdx, 'value', e.target.value)}
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9rem'
-                              }}
-                            />
-                            <button 
-                              onClick={() => deleteMatchParam(ruleIdx, condIdx, mIdx)} 
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: 'none',
-                                background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
-                                color: 'white',
-                                fontSize: '0.8rem',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              ❌
-                            </button>
-                          </div>
-                        ))}
-                        <button 
-                          onClick={() => addMatchParam(ruleIdx, condIdx)} 
-                          style={{ 
-                            padding: '0.5rem 1rem',
-                            borderRadius: '6px',
-                            border: 'none',
-                            background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
-                            color: 'white',
-                            fontSize: '0.8rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            marginTop: '0.5rem'
-                          }}
-                        >
-                          + Add Match
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+    {rule.conditions[groupKey].length === 0 && (
+      <div style={{ marginBottom: '1rem', fontStyle: 'italic', color: '#888' }}>
+        No conditions yet.
+      </div>
+    )}
 
-                  <button 
-                    onClick={() => addEventCondition(ruleIdx)} 
-                    style={{ 
-                      padding: '0.75rem 1.5rem',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
-                      color: 'white',
-                      fontSize: '0.9rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'transform 0.2s ease'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                    onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                  >
-                    + Add Event Condition
-                  </button>
+    {rule.conditions[groupKey].map((cond, condIdx) => (
+      <div key={condIdx} style={{ 
+        marginBottom: '1rem',
+        padding: '1rem',
+        border: '1px solid #e1e8ed',
+        borderRadius: '10px',
+        background: 'white'
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: '0.5rem', 
+          marginBottom: '1rem', 
+          alignItems: 'center', 
+          flexWrap: 'wrap'
+        }}>
+          <select
+            value={cond.key}
+            onChange={(e) => updateCondition(ruleIdx, groupKey, condIdx, 'key', e.target.value)}
+            style={{ 
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: '1px solid #ddd',
+              fontSize: '0.9rem'
+            }}
+          >
+
+          
+            <option value="">
+              {groupKey === 'events' ? 'Select Event' : groupKey === 'user_properties' ? 'Select User Property' : 'Select Device Key'}
+            </option>
+
+            {keyOptions[groupKey].map((key) => (
+              <option key={key} value={key}>{key}</option>
+            ))}
+
+          </select>
+
+
+          <select
+            value={cond.operator || '=='}
+            onChange={(e) => updateCondition(ruleIdx, groupKey, condIdx, 'operator', e.target.value)}
+            style={{ 
+              padding: '0.5rem',
+              borderRadius: '6px',
+              border: '1px solid #ddd',
+              fontSize: '0.9rem'
+            }}
+          >
+            {operatorOptions.map((op) => (
+              <option key={op} value={op}>{op}</option>
+            ))}
+          </select>
+
+          {/* NEW: NOT checkbox for the whole condition */}
+          <label style={{ fontSize: '0.8rem', fontWeight: '500', color: '#666' }}>
+            <input
+              type="checkbox"
+              checked={cond.not || false}
+              onChange={(e) =>
+                updateCondition(ruleIdx, groupKey, condIdx, 'not', e.target.checked.toString())
+              }
+              style={{ marginLeft: '8px', marginRight: '4px' }}
+            />
+            NOT
+          </label>
+
+          {groupKey === 'events' ? (
+            <>
+              <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#555' }}>
+                Count:
+              </span>
+              <select
+                value={cond.countOperator}
+                onChange={(e) => updateCondition(ruleIdx, groupKey, condIdx, 'countOperator', e.target.value)}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #ddd',
+                  fontSize: '0.9rem'
+                }}
+              >
+                {countOperatorOptions.map((op) => (
+                  <option key={op} value={op}>{op}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                placeholder="Count"
+                value={cond.count}
+                onChange={(e) => updateCondition(ruleIdx, groupKey, condIdx, 'count', e.target.value)}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #ddd',
+                  width: '80px',
+                  fontSize: '0.9rem'
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#555' }}>
+                Value:
+              </span>
+              <input
+                type="text"
+                placeholder="e.g. yes"
+                value={cond.count}
+                onChange={(e) => updateCondition(ruleIdx, groupKey, condIdx, 'count', e.target.value)}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #ddd',
+                  fontSize: '0.9rem',
+                  width: '150px'
+                }}
+              />
+            </>
+          )}
+
+
+
+
+          <button 
+            onClick={() => deleteCondition(ruleIdx, groupKey, condIdx)} 
+            style={{ 
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              border: 'none',
+              background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
+              color: 'white',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              marginLeft: 'auto'
+            }}
+          >
+            🗑
+          </button>
+        </div>
+
+        {/* Match Parameters */}
+        <div style={{ marginLeft: '1rem' }}>
+          <strong style={{ fontSize: '0.9rem', color: '#555' }}>
+            Match Parameters:
+          </strong>
+          {cond.match.map((m, mIdx) => (
+            <div key={mIdx} style={{ 
+              display: 'flex', 
+              gap: '0.5rem', 
+              marginTop: '0.5rem', 
+              alignItems: 'center'
+            }}>
+              <select
+                value={m.key}
+                onChange={(e) => updateMatchParam(ruleIdx, groupKey, condIdx, mIdx, 'key', e.target.value)}
+                style={{ 
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #ddd',
+                  fontSize: '0.9rem'
+                }}
+              >
+                <option value="">Select Param</option>
+                {(defaultParamOptions[cond.key] || []).map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <select
+                value={m.operator}
+                onChange={(e) => updateMatchParam(ruleIdx, groupKey, condIdx, mIdx, 'operator', e.target.value)}
+                style={{ 
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #ddd',
+                  fontSize: '0.9rem'
+                }}
+              >
+                {operatorOptions.map((op) => (
+                  <option key={op} value={op}>{op}</option>
+                ))}
+              </select>
+
+
+              <input
+                value={m.value}
+                placeholder="Value"
+                onChange={(e) => updateMatchParam(ruleIdx, groupKey, condIdx, mIdx, 'value', e.target.value)}
+                style={{ 
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: '1px solid #ddd',
+                  fontSize: '0.9rem'
+                }}
+              />
+
+              {['in', 'not in'].includes(m.operator) && (
+                <div style={{ fontSize: '0.75rem', color: '#888' }}>
+                  Separate values with commas
                 </div>
+              )}
 
-                {/* User Conditions Section */}
-                <div>
-                  <h4 style={{ 
-                    margin: '0 0 1rem 0',
-                    color: '#555',
-                    fontSize: '1.1rem',
-                    fontWeight: '600'
-                  }}>
-                    👤 User Property Conditions:
-                  </h4>
-                  
-                  {userConditions[ruleIdx]?.map((cond, condIdx) => (
-                    <div key={condIdx} style={{ 
-                      marginBottom: '1rem',
-                      padding: '1rem',
-                      border: '1px solid #e1e8ed',
-                      borderRadius: '10px',
-                      background: 'white'
-                    }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        gap: '0.5rem', 
-                        alignItems: 'center', 
-                        flexWrap: 'wrap'
-                      }}>
-                        <label style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '0.5rem',
-                          fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#555',
-                          cursor: 'pointer'
-                        }}>
-                          <input
-                            type="checkbox"
-                            checked={cond.isCustom}
-                            onChange={(e) => updateUserCondition(ruleIdx, condIdx, 'isCustom', e.target.checked)}
-                            style={{ transform: 'scale(1.1)' }}
-                          />
-                          Custom Property
-                        </label>
-                        
-                        {cond.isCustom ? (
-                          <input
-                            value={cond.property}
-                            placeholder="Custom property name"
-                            onChange={(e) => updateUserCondition(ruleIdx, condIdx, 'property', e.target.value)}
-                            style={{ 
-                              padding: '0.5rem',
-                              borderRadius: '6px',
-                              border: '1px solid #ddd',
-                              fontSize: '0.9rem',
-                              minWidth: '150px'
-                            }}
-                          />
-                        ) : (
-                          <select
-                            value={cond.property}
-                            onChange={(e) => updateUserCondition(ruleIdx, condIdx, 'property', e.target.value)}
-                            style={{ 
-                              padding: '0.5rem',
-                              borderRadius: '6px',
-                              border: '1px solid #ddd',
-                              fontSize: '0.9rem'
-                            }}
-                          >
-                            <option value="">Select Property</option>
-                            {userPropertyOptions.map((prop) => (
-                              <option key={prop} value={prop}>{prop}</option>
-                            ))}
-                          </select>
-                        )}
-                        
-                        <select
-                          value={cond.operator}
-                          onChange={(e) => updateUserCondition(ruleIdx, condIdx, 'operator', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            fontSize: '0.9rem'
-                          }}
-                        >
-                          {userPropertyOperatorOptions.map((op) => (
-                            <option key={op} value={op}>{op}</option>
-                          ))}
-                        </select>
-                        
-                        <input
-                          value={cond.value}
-                          placeholder="Value"
-                          onChange={(e) => updateUserCondition(ruleIdx, condIdx, 'value', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            fontSize: '0.9rem',
-                            minWidth: '100px'
-                          }}
-                        />
-                        
-                        <button 
-                          onClick={() => deleteUserCondition(ruleIdx, condIdx)} 
-                          style={{ 
-                            padding: '0.5rem 1rem',
-                            borderRadius: '6px',
-                            border: 'none',
-                            background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
-                            color: 'white',
-                            fontSize: '0.8rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            marginLeft: 'auto'
-                          }}
-                        >
-                          🗑
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+              <button 
+                onClick={() => deleteMatchParam(ruleIdx, groupKey, condIdx, mIdx)} 
+                style={{ 
+                  padding: '0.5rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
+                  color: 'white',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ❌
+              </button>
+            </div>
+          ))}
+          <button 
+            onClick={() => addMatchParam(ruleIdx, groupKey, condIdx)} 
+            style={{ 
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              border: 'none',
+              background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+              color: 'white',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              marginTop: '0.5rem'
+            }}
+          >
+            + Add Match
+          </button>
+        </div>
+      </div>
+    ))}
 
-                  <button 
-                    onClick={() => addUserCondition(ruleIdx)} 
-                    style={{ 
-                      padding: '0.75rem 1.5rem',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      color: 'white',
-                      fontSize: '0.9rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'transform 0.2s ease'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                    onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                  >
-                    + Add User Property Condition
-                  </button>
-                </div>
+    <button 
+      onClick={() => addCondition(ruleIdx, groupKey)}
+      style={{
+        padding: '0.75rem 1.5rem',
+        borderRadius: '8px',
+        border: 'none',
+        background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+        color: 'white',
+        fontSize: '0.9rem',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'transform 0.2s ease'
+      }}
+      onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+      onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+    >
+      + Add {groupKey.replace('_', ' ')} Condition
+    </button>
+  </div>
+))}
+
               </div>
             ))}
 
