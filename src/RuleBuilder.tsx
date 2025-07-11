@@ -727,7 +727,7 @@ const formatted = ruleSets.map((rule) => {
       background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
       padding: '1.5rem'
     }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto', width: '95%' }}>
         {/* Header */}
         <div style={{ 
           display: 'flex', 
@@ -815,8 +815,8 @@ const formatted = ruleSets.map((rule) => {
         }}>
           <div style={{ 
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: '1.5rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+            gap: '2rem',
             alignItems: 'start'
           }}>
             {/* Package Selection */}
@@ -1246,7 +1246,7 @@ const formatted = ruleSets.map((rule) => {
                   {/* Rule Set Header */}
                   <div style={{ 
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
                     gap: '1.5rem',
                     marginBottom: '2rem',
                     alignItems: 'end'
@@ -1416,8 +1416,8 @@ const formatted = ruleSets.map((rule) => {
                               {/* Main condition controls */}
                               <div style={{ 
                                 display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                                gap: '0.75rem',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                                gap: '1rem',
                                 marginBottom: '1rem',
                                 alignItems: 'end'
                               }}>
@@ -1630,8 +1630,8 @@ const formatted = ruleSets.map((rule) => {
                                     {cond.match.map((m, mIdx) => (
                                       <div key={mIdx} style={{ 
                                         display: 'grid',
-                                        gridTemplateColumns: '1fr 1fr 1fr auto',
-                                        gap: '0.5rem',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                        gap: '0.75rem',
                                         alignItems: 'center',
                                         padding: '0.75rem',
                                         background: 'white',
