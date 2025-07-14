@@ -4,12 +4,13 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 
-const eventOptions = ['level_complete', 'level_failed', 'watch_ad', 'purchase_made', 'app_open'] as const;
-const userPropertyOptions = ['subscriber_segment', 'user_level', 'vip_status', 'country', 'device_type'] as const;
-const deviceOptions = ['country', 'platform', 'app_version', 'device_model'] as const;
+const eventOptions = ['level_complete', 'level_failed', 'watch_ad', 'purchase', 'session_start'] as const;
+const userPropertyOptions = ['subscriber_segment', 'user_level', 'total_purchases', 'days_since_install'] as const;
+const deviceOptions = ['country', 'platform', 'app_version', 'device_type'] as const;
 
-const operatorOptions = ['==', '!=', '>', '<', '>=', '<=', 'in', 'not_in'] as const;
-const countOperatorOptions = ['==', '!=', '>', '<', '>=', '<='] as const;
+const eventOperators = ['==', '>=', '<=', '>', '<'] as const;
+const valueOperators = ['==', '!=', '>=', '<=', '>', '<', 'in', 'not_in'] as const;
+const paramOperators = ['==', '!=', 'in', 'not_in', 'contains'] as const;
 
 type EventCondition = {
   key: string;
@@ -21,7 +22,7 @@ type EventCondition = {
 
 type UserPropertyCondition = {
   key: string;
-  value: { [operator: string]: string | string[] };
+  value: { [operator: string]: string | number | string[] };
   not: boolean;
 };
 
@@ -58,7 +59,7 @@ const prebuiltTemplates = [
               count: { '==': 3 },
               within_last_days: 7,
               param: {
-                reason: { 'in': ['timeout', 'manual'] }
+                reason: { in: ['timeout', 'manual'] }
               },
               not: false
             }
@@ -73,7 +74,7 @@ const prebuiltTemplates = [
           device: [
             {
               key: 'country',
-              value: { 'in': ['US', 'CA'] },
+              value: { in: ['US', 'CA'] },
               not: false
             }
           ]
@@ -183,13 +184,18 @@ export default function RuleBuilder() {
   const loadAllFeatureNames = async () => {
     if (!user || !selectedTenant || !hasAccess) return;
 
-    const docRef = doc(db, 'rules', selectedTenant);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      const rules = snapshot.data()?.rules || {};
-      const featureNames = Object.keys(rules);
-      setAllFeatureNames(featureNames);
-    } else {
+    try {
+      const docRef = doc(db, 'rules', selectedTenant);
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        const rules = snapshot.data()?.rules || {};
+        const featureNames = Object.keys(rules);
+        setAllFeatureNames(featureNames);
+      } else {
+        setAllFeatureNames([]);
+      }
+    } catch (err) {
+      console.error('Error loading feature names:', err);
       setAllFeatureNames([]);
     }
   };
@@ -197,22 +203,28 @@ export default function RuleBuilder() {
   const loadFeatureRule = async (feature: string) => {
     if (!user || !selectedTenant || !hasAccess) return;
 
-    const docRef = doc(db, 'rules', selectedTenant);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      const ruleData = snapshot.data()?.rules?.[feature];
-      if (Array.isArray(ruleData)) {
-        const parsedRuleSets: RuleSet[] = ruleData.map((r: any) => ({
-          value: String(r.value ?? ''),
-          sequential: !!r.sequential,
-          conditions: r.conditions || { events: [], user_properties: [], device: [] }
-        }));
-        setRuleSets(parsedRuleSets);
-        setRawJSON(JSON.stringify({ [feature]: ruleData }, null, 2));
-      } else {
-        setRuleSets([]);
-        setRawJSON('');
+    try {
+      const docRef = doc(db, 'rules', selectedTenant);
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        const ruleData = snapshot.data()?.rules?.[feature];
+        if (Array.isArray(ruleData)) {
+          const parsedRuleSets: RuleSet[] = ruleData.map((r: any) => ({
+            value: String(r.value ?? ''),
+            sequential: !!r.sequential,
+            conditions: r.conditions || { events: [], user_properties: [], device: [] }
+          }));
+          setRuleSets(parsedRuleSets);
+          setRawJSON(JSON.stringify({ [feature]: ruleData }, null, 2));
+        } else {
+          setRuleSets([]);
+          setRawJSON('');
+        }
       }
+    } catch (err) {
+      console.error('Error loading feature rule:', err);
+      setRuleSets([]);
+      setRawJSON('');
     }
   };
 
@@ -237,12 +249,12 @@ export default function RuleBuilder() {
       }
     }];
 
-    const docRef = doc(db, 'rules', selectedTenant);
-    const snapshot = await getDoc(docRef);
-    let rules = snapshot.exists() ? snapshot.data().rules || {} : {};
-    rules[featureName] = emptyRule;
-
     try {
+      const docRef = doc(db, 'rules', selectedTenant);
+      const snapshot = await getDoc(docRef);
+      let rules = snapshot.exists() ? snapshot.data().rules || {} : {};
+      rules[featureName] = emptyRule;
+
       await setDoc(docRef, { rules }, { merge: true });
       setStatusMessage('✅ Rule created successfully! Now add conditions.');
       setRuleSets([{ value: 'true', sequential: false, conditions: { events: [], user_properties: [], device: [] } }]);
@@ -260,21 +272,21 @@ export default function RuleBuilder() {
       return;
     }
 
-    const formatted = ruleSets.map((rule) => ({
-      sequential: rule.sequential,
-      value: isNaN(Number(rule.value)) ? rule.value : Number(rule.value),
-      conditions: rule.conditions
-    }));
-
-    const docRef = doc(db, 'rules', selectedTenant);
-    const snapshot = await getDoc(docRef);
-    let rules = snapshot.exists() ? snapshot.data().rules || {} : {};
-    rules[featureName] = formatted;
-
-    const finalPayload = { [featureName]: formatted };
-    setRawJSON(JSON.stringify(finalPayload, null, 2));
-
     try {
+      const formatted = ruleSets.map((rule) => ({
+        sequential: rule.sequential,
+        value: isNaN(Number(rule.value)) ? rule.value : Number(rule.value),
+        conditions: rule.conditions
+      }));
+
+      const docRef = doc(db, 'rules', selectedTenant);
+      const snapshot = await getDoc(docRef);
+      let rules = snapshot.exists() ? snapshot.data().rules || {} : {};
+      rules[featureName] = formatted;
+
+      const finalPayload = { [featureName]: formatted };
+      setRawJSON(JSON.stringify(finalPayload, null, 2));
+
       await setDoc(docRef, { rules }, { merge: true });
       setStatusMessage('✅ Rule saved to Firestore!');
       await loadAllFeatureNames();
@@ -295,17 +307,17 @@ export default function RuleBuilder() {
       return;
     }
 
-    const docRef = doc(db, 'rules', selectedTenant);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      const rules = snapshot.data().rules || {};
-      const ruleData = rules[featureName];
-      
-      if (ruleData) {
-        rules[newFeatureName] = ruleData;
-        delete rules[featureName];
+    try {
+      const docRef = doc(db, 'rules', selectedTenant);
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        const rules = snapshot.data().rules || {};
+        const ruleData = rules[featureName];
         
-        try {
+        if (ruleData) {
+          rules[newFeatureName] = ruleData;
+          delete rules[featureName];
+          
           await setDoc(docRef, { rules }, { merge: true });
           setAllFeatureNames(prev => {
             const updated = prev.filter(name => name !== featureName);
@@ -314,11 +326,11 @@ export default function RuleBuilder() {
           setFeatureName(newFeatureName);
           setIsRenaming(false);
           setStatusMessage('✅ Feature renamed successfully!');
-        } catch (err) {
-          console.error(err);
-          setStatusMessage('❌ Failed to rename feature.');
         }
       }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage('❌ Failed to rename feature.');
     }
   };
 
@@ -329,13 +341,13 @@ export default function RuleBuilder() {
       return;
     }
 
-    const docRef = doc(db, 'rules', selectedTenant);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      const rules = snapshot.data().rules || {};
-      delete rules[featureName];
-      
-      try {
+    try {
+      const docRef = doc(db, 'rules', selectedTenant);
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        const rules = snapshot.data().rules || {};
+        delete rules[featureName];
+        
         await setDoc(docRef, { rules }, { merge: true });
         setAllFeatureNames(prev => prev.filter(name => name !== featureName));
         setFeatureName('');
@@ -343,10 +355,10 @@ export default function RuleBuilder() {
         setRuleSets([]);
         setRawJSON('');
         setStatusMessage('✅ Feature deleted successfully!');
-      } catch (err) {
-        console.error(err);
-        setStatusMessage('❌ Failed to delete feature.');
       }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage('❌ Failed to delete feature.');
     }
   };
 
@@ -388,7 +400,7 @@ export default function RuleBuilder() {
     setRuleSets(updated);
   };
 
-  // Event condition helpers
+  // Event condition functions
   const addEventCondition = (ruleIdx: number) => {
     const updated = [...ruleSets];
     if (!updated[ruleIdx].conditions.events) {
@@ -397,9 +409,29 @@ export default function RuleBuilder() {
     updated[ruleIdx].conditions.events!.push({
       key: '',
       count: { '==': 1 },
-      within_last_days: 30,
+      within_last_days: 7,
       not: false
     });
+    setRuleSets(updated);
+  };
+
+  const updateEventCondition = (ruleIdx: number, eventIdx: number, field: string, value: any) => {
+    const updated = [...ruleSets];
+    if (field === 'count_operator' || field === 'count_value') {
+      const currentCount = updated[ruleIdx].conditions.events![eventIdx].count;
+      const currentOperator = Object.keys(currentCount)[0];
+      const currentValue = Object.values(currentCount)[0];
+      
+      if (field === 'count_operator') {
+        updated[ruleIdx].conditions.events![eventIdx].count = { [value]: currentValue };
+      } else {
+        updated[ruleIdx].conditions.events![eventIdx].count = { [currentOperator]: Number(value) };
+      }
+    } else if (field === 'within_last_days') {
+      updated[ruleIdx].conditions.events![eventIdx].within_last_days = Number(value);
+    } else {
+      (updated[ruleIdx].conditions.events![eventIdx] as any)[field] = value;
+    }
     setRuleSets(updated);
   };
 
@@ -409,49 +441,7 @@ export default function RuleBuilder() {
     setRuleSets(updated);
   };
 
-  const updateEventCondition = (ruleIdx: number, eventIdx: number, field: string, value: any) => {
-    const updated = [...ruleSets];
-    const event = updated[ruleIdx].conditions.events![eventIdx];
-    if (field === 'count_operator' || field === 'count_value') {
-      const operator = field === 'count_operator' ? value : Object.keys(event.count)[0];
-      const countValue = field === 'count_value' ? Number(value) : Object.values(event.count)[0];
-      event.count = { [operator]: countValue };
-    } else {
-      (event as any)[field] = value;
-    }
-    setRuleSets(updated);
-  };
-
-  const addEventParam = (ruleIdx: number, eventIdx: number) => {
-    const updated = [...ruleSets];
-    const event = updated[ruleIdx].conditions.events![eventIdx];
-    if (!event.param) event.param = {};
-    event.param['new_param'] = { '==': '' };
-    setRuleSets(updated);
-  };
-
-  const updateEventParam = (ruleIdx: number, eventIdx: number, oldKey: string, newKey: string, operator: string, value: string | string[]) => {
-    const updated = [...ruleSets];
-    const event = updated[ruleIdx].conditions.events![eventIdx];
-    if (!event.param) return;
-    
-    if (oldKey !== newKey) {
-      delete event.param[oldKey];
-    }
-    event.param[newKey] = { [operator]: value };
-    setRuleSets(updated);
-  };
-
-  const deleteEventParam = (ruleIdx: number, eventIdx: number, paramKey: string) => {
-    const updated = [...ruleSets];
-    const event = updated[ruleIdx].conditions.events![eventIdx];
-    if (event.param) {
-      delete event.param[paramKey];
-    }
-    setRuleSets(updated);
-  };
-
-  // User property condition helpers
+  // User property condition functions
   const addUserPropertyCondition = (ruleIdx: number) => {
     const updated = [...ruleSets];
     if (!updated[ruleIdx].conditions.user_properties) {
@@ -465,26 +455,42 @@ export default function RuleBuilder() {
     setRuleSets(updated);
   };
 
+  const updateUserPropertyCondition = (ruleIdx: number, propIdx: number, field: string, value: any) => {
+    const updated = [...ruleSets];
+    if (field === 'value_operator' || field === 'value_value') {
+      const currentValue = updated[ruleIdx].conditions.user_properties![propIdx].value;
+      const currentOperator = Object.keys(currentValue)[0];
+      const currentVal = Object.values(currentValue)[0];
+      
+      if (field === 'value_operator') {
+        let newValue = currentVal;
+        if ((value === 'in' || value === 'not_in') && typeof currentVal === 'string') {
+          newValue = currentVal.split(',').map(s => s.trim()).filter(s => s);
+        } else if ((value !== 'in' && value !== 'not_in') && Array.isArray(currentVal)) {
+          newValue = currentVal.join(', ');
+        }
+        updated[ruleIdx].conditions.user_properties![propIdx].value = { [value]: newValue };
+      } else {
+        const operator = Object.keys(currentValue)[0];
+        let processedValue = value;
+        if (operator === 'in' || operator === 'not_in') {
+          processedValue = typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter((s: string) => s) : value;
+        }
+        updated[ruleIdx].conditions.user_properties![propIdx].value = { [operator]: processedValue };
+      }
+    } else {
+      (updated[ruleIdx].conditions.user_properties![propIdx] as any)[field] = value;
+    }
+    setRuleSets(updated);
+  };
+
   const deleteUserPropertyCondition = (ruleIdx: number, propIdx: number) => {
     const updated = [...ruleSets];
     updated[ruleIdx].conditions.user_properties!.splice(propIdx, 1);
     setRuleSets(updated);
   };
 
-  const updateUserPropertyCondition = (ruleIdx: number, propIdx: number, field: string, value: any) => {
-    const updated = [...ruleSets];
-    const prop = updated[ruleIdx].conditions.user_properties![propIdx];
-    if (field === 'value_operator' || field === 'value_content') {
-      const operator = field === 'value_operator' ? value : Object.keys(prop.value)[0];
-      const content = field === 'value_content' ? value : Object.values(prop.value)[0];
-      prop.value = { [operator]: content };
-    } else {
-      (prop as any)[field] = value;
-    }
-    setRuleSets(updated);
-  };
-
-  // Device condition helpers
+  // Device condition functions
   const addDeviceCondition = (ruleIdx: number) => {
     const updated = [...ruleSets];
     if (!updated[ruleIdx].conditions.device) {
@@ -498,21 +504,73 @@ export default function RuleBuilder() {
     setRuleSets(updated);
   };
 
+  const updateDeviceCondition = (ruleIdx: number, deviceIdx: number, field: string, value: any) => {
+    const updated = [...ruleSets];
+    if (field === 'value_operator' || field === 'value_value') {
+      const currentValue = updated[ruleIdx].conditions.device![deviceIdx].value;
+      const currentOperator = Object.keys(currentValue)[0];
+      const currentVal = Object.values(currentValue)[0];
+      
+      if (field === 'value_operator') {
+        let newValue = currentVal;
+        if ((value === 'in' || value === 'not_in') && typeof currentVal === 'string') {
+          newValue = currentVal.split(',').map(s => s.trim()).filter(s => s);
+        } else if ((value !== 'in' && value !== 'not_in') && Array.isArray(currentVal)) {
+          newValue = currentVal.join(', ');
+        }
+        updated[ruleIdx].conditions.device![deviceIdx].value = { [value]: newValue };
+      } else {
+        const operator = Object.keys(currentValue)[0];
+        let processedValue = value;
+        if (operator === 'in' || operator === 'not_in') {
+          processedValue = typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter((s: string) => s) : value;
+        }
+        updated[ruleIdx].conditions.device![deviceIdx].value = { [operator]: processedValue };
+      }
+    } else {
+      (updated[ruleIdx].conditions.device![deviceIdx] as any)[field] = value;
+    }
+    setRuleSets(updated);
+  };
+
   const deleteDeviceCondition = (ruleIdx: number, deviceIdx: number) => {
     const updated = [...ruleSets];
     updated[ruleIdx].conditions.device!.splice(deviceIdx, 1);
     setRuleSets(updated);
   };
 
-  const updateDeviceCondition = (ruleIdx: number, deviceIdx: number, field: string, value: any) => {
+  // Event parameter functions
+  const addEventParam = (ruleIdx: number, eventIdx: number) => {
     const updated = [...ruleSets];
-    const device = updated[ruleIdx].conditions.device![deviceIdx];
-    if (field === 'value_operator' || field === 'value_content') {
-      const operator = field === 'value_operator' ? value : Object.keys(device.value)[0];
-      const content = field === 'value_content' ? value : Object.values(device.value)[0];
-      device.value = { [operator]: content };
-    } else {
-      (device as any)[field] = value;
+    if (!updated[ruleIdx].conditions.events![eventIdx].param) {
+      updated[ruleIdx].conditions.events![eventIdx].param = {};
+    }
+    updated[ruleIdx].conditions.events![eventIdx].param!['new_param'] = { '==': '' };
+    setRuleSets(updated);
+  };
+
+  const updateEventParam = (ruleIdx: number, eventIdx: number, oldKey: string, newKey: string, operator: string, value: any) => {
+    const updated = [...ruleSets];
+    const params = updated[ruleIdx].conditions.events![eventIdx].param || {};
+    
+    if (oldKey !== newKey && oldKey !== 'new_param') {
+      delete params[oldKey];
+    }
+    
+    let processedValue = value;
+    if (operator === 'in' || operator === 'not_in') {
+      processedValue = typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter((s: string) => s) : value;
+    }
+    
+    params[newKey] = { [operator]: processedValue };
+    updated[ruleIdx].conditions.events![eventIdx].param = params;
+    setRuleSets(updated);
+  };
+
+  const deleteEventParam = (ruleIdx: number, eventIdx: number, paramKey: string) => {
+    const updated = [...ruleSets];
+    if (updated[ruleIdx].conditions.events![eventIdx].param) {
+      delete updated[ruleIdx].conditions.events![eventIdx].param![paramKey];
     }
     setRuleSets(updated);
   };
@@ -652,7 +710,7 @@ export default function RuleBuilder() {
       background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
       padding: '2rem'
     }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         {/* Header */}
         <div style={{ 
           display: 'flex', 
@@ -1164,15 +1222,15 @@ export default function RuleBuilder() {
                   </div>
                 </div>
 
-                {/* Events Section */}
-                <div style={{ marginBottom: '2rem' }}>
+                {/* Event Conditions */}
+                <div style={{ marginBottom: '1.5rem' }}>
                   <h4 style={{ 
                     margin: '0 0 1rem 0',
                     color: '#555',
                     fontSize: '1.1rem',
                     fontWeight: '600'
                   }}>
-                    📊 Event Conditions:
+                    📅 Event Conditions:
                   </h4>
                   
                   {rule.conditions.events?.map((event, eventIdx) => (
@@ -1210,7 +1268,7 @@ export default function RuleBuilder() {
                           Count:
                         </span>
                         <select
-                          value={Object.keys(event.count)[0] || '=='}
+                          value={Object.keys(event.count)[0]}
                           onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count_operator', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
@@ -1219,14 +1277,14 @@ export default function RuleBuilder() {
                             fontSize: '0.9rem'
                           }}
                         >
-                          {countOperatorOptions.map((op) => (
+                          {eventOperators.map((op) => (
                             <option key={op} value={op}>{op}</option>
                           ))}
                         </select>
                         <input
                           type="number"
                           placeholder="Count"
-                          value={Object.values(event.count)[0] || ''}
+                          value={Object.values(event.count)[0]}
                           onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count_value', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
@@ -1244,7 +1302,7 @@ export default function RuleBuilder() {
                           type="number"
                           placeholder="Days"
                           value={event.within_last_days || ''}
-                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'within_last_days', Number(e.target.value))}
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'within_last_days', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
@@ -1259,8 +1317,6 @@ export default function RuleBuilder() {
                           alignItems: 'center', 
                           gap: '0.3rem',
                           fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#555',
                           cursor: 'pointer'
                         }}>
                           <input
@@ -1294,81 +1350,69 @@ export default function RuleBuilder() {
                         <strong style={{ fontSize: '0.9rem', color: '#555' }}>
                           Parameters:
                         </strong>
-                        {event.param && Object.entries(event.param).map(([paramKey, paramValue]) => (
-                          <div key={paramKey} style={{ 
-                            display: 'flex', 
-                            gap: '0.5rem', 
-                            marginTop: '0.5rem', 
-                            alignItems: 'center'
-                          }}>
-                            <input
-                              value={paramKey}
-                              placeholder="Parameter name"
-                              onChange={(e) => {
-                                const operator = Object.keys(paramValue)[0];
-                                const value = Object.values(paramValue)[0];
-                                updateEventParam(ruleIdx, eventIdx, paramKey, e.target.value, operator, value);
-                              }}
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9rem'
-                              }}
-                            />
-                            <select
-                              value={Object.keys(paramValue)[0]}
-                              onChange={(e) => {
-                                const value = Object.values(paramValue)[0];
-                                updateEventParam(ruleIdx, eventIdx, paramKey, paramKey, e.target.value, value);
-                              }}
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9rem'
-                              }}
-                            >
-                              {operatorOptions.map((op) => (
-                                <option key={op} value={op}>{op}</option>
-                              ))}
-                            </select>
-                            <input
-                              value={Array.isArray(Object.values(paramValue)[0]) 
-                                ? (Object.values(paramValue)[0] as string[]).join(', ')
-                                : String(Object.values(paramValue)[0])
-                              }
-                              placeholder="Value (comma-separated for arrays)"
-                              onChange={(e) => {
-                                const operator = Object.keys(paramValue)[0];
-                                const value = ['in', 'not_in'].includes(operator) 
-                                  ? e.target.value.split(',').map(v => v.trim())
-                                  : e.target.value;
-                                updateEventParam(ruleIdx, eventIdx, paramKey, paramKey, operator, value);
-                              }}
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: '1px solid #ddd',
-                                fontSize: '0.9rem'
-                              }}
-                            />
-                            <button 
-                              onClick={() => deleteEventParam(ruleIdx, eventIdx, paramKey)} 
-                              style={{ 
-                                padding: '0.5rem',
-                                borderRadius: '6px',
-                                border: 'none',
-                                background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
-                                color: 'white',
-                                fontSize: '0.8rem',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              ❌
-                            </button>
-                          </div>
-                        ))}
+                        {event.param && Object.entries(event.param).map(([paramKey, paramValue]) => {
+                          const operator = Object.keys(paramValue)[0];
+                          const value = Object.values(paramValue)[0];
+                          return (
+                            <div key={paramKey} style={{ 
+                              display: 'flex', 
+                              gap: '0.5rem', 
+                              marginTop: '0.5rem', 
+                              alignItems: 'center'
+                            }}>
+                              <input
+                                value={paramKey}
+                                placeholder="Parameter name"
+                                onChange={(e) => updateEventParam(ruleIdx, eventIdx, paramKey, e.target.value, operator, value)}
+                                style={{ 
+                                  padding: '0.5rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #ddd',
+                                  fontSize: '0.9rem'
+                                }}
+                              />
+                              <select
+                                value={operator}
+                                onChange={(e) => updateEventParam(ruleIdx, eventIdx, paramKey, paramKey, e.target.value, value)}
+                                style={{ 
+                                  padding: '0.5rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #ddd',
+                                  fontSize: '0.9rem'
+                                }}
+                              >
+                                {paramOperators.map((op) => (
+                                  <option key={op} value={op}>{op}</option>
+                                ))}
+                              </select>
+                              <input
+                                value={Array.isArray(value) ? value.join(', ') : value}
+                                placeholder="Value (comma-separated for arrays)"
+                                onChange={(e) => updateEventParam(ruleIdx, eventIdx, paramKey, paramKey, operator, e.target.value)}
+                                style={{ 
+                                  padding: '0.5rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #ddd',
+                                  fontSize: '0.9rem'
+                                }}
+                              />
+                              <button 
+                                onClick={() => deleteEventParam(ruleIdx, eventIdx, paramKey)} 
+                                style={{ 
+                                  padding: '0.5rem',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)',
+                                  color: 'white',
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ❌
+                              </button>
+                            </div>
+                          );
+                        })}
                         <button 
                           onClick={() => addEventParam(ruleIdx, eventIdx)} 
                           style={{ 
@@ -1409,8 +1453,8 @@ export default function RuleBuilder() {
                   </button>
                 </div>
 
-                {/* User Properties Section */}
-                <div style={{ marginBottom: '2rem' }}>
+                {/* User Property Conditions */}
+                <div style={{ marginBottom: '1.5rem' }}>
                   <h4 style={{ 
                     margin: '0 0 1rem 0',
                     color: '#555',
@@ -1436,7 +1480,7 @@ export default function RuleBuilder() {
                       }}>
                         <select
                           value={prop.key}
-                          onChange={(e) => updateUserPropertyCondition(propIdx, propIdx, 'key', e.target.value)}
+                          onChange={(e) => updateUserPropertyCondition(ruleIdx, propIdx, 'key', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
@@ -1451,7 +1495,7 @@ export default function RuleBuilder() {
                         </select>
                         
                         <select
-                          value={Object.keys(prop.value)[0] || '=='}
+                          value={Object.keys(prop.value)[0]}
                           onChange={(e) => updateUserPropertyCondition(ruleIdx, propIdx, 'value_operator', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
@@ -1460,24 +1504,15 @@ export default function RuleBuilder() {
                             fontSize: '0.9rem'
                           }}
                         >
-                          {operatorOptions.map((op) => (
+                          {valueOperators.map((op) => (
                             <option key={op} value={op}>{op}</option>
                           ))}
                         </select>
                         
                         <input
-                          value={Array.isArray(Object.values(prop.value)[0]) 
-                            ? (Object.values(prop.value)[0] as string[]).join(', ')
-                            : String(Object.values(prop.value)[0] || '')
-                          }
+                          value={Array.isArray(Object.values(prop.value)[0]) ? (Object.values(prop.value)[0] as string[]).join(', ') : Object.values(prop.value)[0]}
                           placeholder="Value (comma-separated for arrays)"
-                          onChange={(e) => {
-                            const operator = Object.keys(prop.value)[0];
-                            const value = ['in', 'not_in'].includes(operator) 
-                              ? e.target.value.split(',').map(v => v.trim())
-                              : e.target.value;
-                            updateUserPropertyCondition(ruleIdx, propIdx, 'value_content', value);
-                          }}
+                          onChange={(e) => updateUserPropertyCondition(ruleIdx, propIdx, 'value_value', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
@@ -1491,8 +1526,6 @@ export default function RuleBuilder() {
                           alignItems: 'center', 
                           gap: '0.3rem',
                           fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#555',
                           cursor: 'pointer'
                         }}>
                           <input
@@ -1543,8 +1576,8 @@ export default function RuleBuilder() {
                   </button>
                 </div>
 
-                {/* Device Section */}
-                <div style={{ marginBottom: '2rem' }}>
+                {/* Device Conditions */}
+                <div style={{ marginBottom: '1.5rem' }}>
                   <h4 style={{ 
                     margin: '0 0 1rem 0',
                     color: '#555',
@@ -1585,7 +1618,7 @@ export default function RuleBuilder() {
                         </select>
                         
                         <select
-                          value={Object.keys(device.value)[0] || '=='}
+                          value={Object.keys(device.value)[0]}
                           onChange={(e) => updateDeviceCondition(ruleIdx, deviceIdx, 'value_operator', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
@@ -1594,24 +1627,15 @@ export default function RuleBuilder() {
                             fontSize: '0.9rem'
                           }}
                         >
-                          {operatorOptions.map((op) => (
+                          {valueOperators.map((op) => (
                             <option key={op} value={op}>{op}</option>
                           ))}
                         </select>
                         
                         <input
-                          value={Array.isArray(Object.values(device.value)[0]) 
-                            ? (Object.values(device.value)[0] as string[]).join(', ')
-                            : String(Object.values(device.value)[0] || '')
-                          }
+                          value={Array.isArray(Object.values(device.value)[0]) ? (Object.values(device.value)[0] as string[]).join(', ') : Object.values(device.value)[0]}
                           placeholder="Value (comma-separated for arrays)"
-                          onChange={(e) => {
-                            const operator = Object.keys(device.value)[0];
-                            const value = ['in', 'not_in'].includes(operator) 
-                              ? e.target.value.split(',').map(v => v.trim())
-                              : e.target.value;
-                            updateDeviceCondition(ruleIdx, deviceIdx, 'value_content', value);
-                          }}
+                          onChange={(e) => updateDeviceCondition(ruleIdx, deviceIdx, 'value_value', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
@@ -1625,8 +1649,6 @@ export default function RuleBuilder() {
                           alignItems: 'center', 
                           gap: '0.3rem',
                           fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#555',
                           cursor: 'pointer'
                         }}>
                           <input
