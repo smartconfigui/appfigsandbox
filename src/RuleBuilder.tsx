@@ -273,35 +273,52 @@ export default function RuleBuilder() {
     }
 
     try {
-      const formatted = ruleSets.map((rule) => ({
-        sequential: rule.sequential,
-        value: isNaN(Number(rule.value)) ? rule.value : Number(rule.value),
-        conditions: rule.conditions
-      }));
-
-      const docRef = doc(db, 'rules', selectedTenant);
-      const snapshot = await getDoc(docRef);
-      let rules = snapshot.exists() ? snapshot.data().rules || {} : {};
-      rules[featureName] = formatted;
-
-      const finalPayload = { [featureName]: formatted };
-      setRawJSON(JSON.stringify(finalPayload, null, 2));
-
-      await setDoc(docRef, { rules }, { merge: true });
-      setStatusMessage('✅ Rule saved to Firestore!');
-      await loadAllFeatureNames();
-    } catch (err) {
-      console.error(err);
-      setStatusMessage('❌ Failed to save rule.');
-    }
-  };
-
-  const handleRename = async () => {
-    if (!featureName || !newFeatureName || featureName === newFeatureName || !selectedTenant || !hasAccess) {
-      alert('Please provide a valid new feature name and ensure you have access.');
-      return;
-    }
-
+      const formattedConditions = {
+        events: rule.conditions.events?.map((e) => {
+          const eventCondition: any = {
+            key: e.key,
+            not: e.not
+          };
+          
+          // Only include count if it has a value
+          if (e.count && e.count !== '') {
+            eventCondition.count = Number(e.count);
+          }
+          
+          // Only include within_last_days if it has a value
+          if (e.within_last_days && e.within_last_days !== '') {
+            eventCondition.within_last_days = Number(e.within_last_days);
+          }
+          
+          // Only include param if there are valid parameters
+          if (e.param?.length > 0) {
+            const validParams = e.param.filter(p => p.key && p.value !== '');
+            if (validParams.length > 0) {
+              eventCondition.param = validParams.reduce((acc: any, p) => {
+                const values = p.value.includes(',') ? p.value.split(',').map(v => v.trim()) : p.value;
+                acc[p.key] = {
+                  [p.operator]: isNaN(Number(values)) ? values : Number(values)
+                };
+                return acc;
+              }, {});
+            }
+          }
+          
+          return eventCondition;
+        }) || [],
+        user_properties: rule.conditions.user_properties?.map((u) => ({
+          key: u.key,
+          not: u.not,
+          value: u.value.includes(',') ? u.value.split(',').map(v => v.trim()) : u.value,
+          operator: u.operator
+        })) || [],
+        device: rule.conditions.device?.map((d) => ({
+          key: d.key,
+          not: d.not,
+          value: d.value.includes(',') ? d.value.split(',').map(v => v.trim()) : d.value,
+          operator: d.operator
+        })) || []
+      };
     if (allFeatureNames.includes(newFeatureName)) {
       alert('A feature with that name already exists. Please choose a different name.');
       return;
@@ -408,8 +425,8 @@ export default function RuleBuilder() {
     }
     updated[ruleIdx].conditions.events!.push({
       key: '',
-      count: { '==': 1 },
-      within_last_days: 7,
+      count: '',
+      within_last_days: '',
       not: false
     });
     setRuleSets(updated);
