@@ -401,10 +401,10 @@ export default function RuleBuilder() {
 
           // Handle operator and value for user_properties and device
           if (!isEvent && c.operator && c.value !== undefined && c.value !== '') {
-            result.operator = c.operator;
-            result.value = ['in', 'not in'].includes(c.operator)
+            const parsedValue = ['in', 'not in'].includes(c.operator)
               ? c.value.split(',').map((v: string) => v.trim())
               : isNaN(Number(c.value)) ? c.value : Number(c.value);
+            result[c.operator] = parsedValue;
           }
 
           // Handle param (match parameters)
