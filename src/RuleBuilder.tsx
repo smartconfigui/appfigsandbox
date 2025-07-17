@@ -55,16 +55,18 @@ const prebuiltTemplates = [
         value: 'retro',
         sequential: true,
         conditions: {
-          events: [
+          events: [],
             {
               key: 'level_complete',
               count: { '==': 3 },
+              repeat: { '==': 1 },
               useRepeat: false,
               within_last_days: 7,
               param: {
                 reason: { in: ['timeout', 'manual'] }
               },
-              not: false
+              not: false,
+              useRepeat: false
             }
           ],
           user_properties: [
@@ -214,12 +216,14 @@ export default function RuleBuilder() {
               key: e.key || '',
               count: e.count || { '==': 1 },
               repeat: e.repeat || { '==': 1 },
+              repeat: e.repeat || { '==': 1 },
               useRepeat: !!e.useRepeat,
               repeat: e.repeat || { '==': 1 },
               useRepeat: !!e.repeat,
               within_last_days: e.within_last_days || '',
               param: e.param || {},
-              not: !!e.not
+              not: !!e.not,
+              useRepeat: !!e.useRepeat
             })),
             user_properties: (r.conditions?.user_properties || []).map((u: any) => ({
               key: u.key || '',
@@ -451,6 +455,7 @@ export default function RuleBuilder() {
       key: '',
       count: { '==': 1 },
       repeat: { '==': 1 },
+      repeat: { '==': 1 },
       useRepeat: false,
       repeat: { '==': 1 },
       useRepeat: false,
@@ -458,7 +463,8 @@ export default function RuleBuilder() {
       useRepeat: false,
       within_last_days: '',
       param: {},
-      not: false
+      not: false,
+      useRepeat: false
     });
     setRuleSets(updated);
   };
