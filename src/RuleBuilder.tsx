@@ -1254,62 +1254,9 @@ export default function RuleBuilder() {
                           ))}
                         </select>
                         
-                        {/* Mode Toggle */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: '#555' }}>
-                            Mode:
-                          </span>
-                          <div style={{ display: 'flex', borderRadius: '9999px', border: '1px solid #ccc', overflow: 'hidden' }}>
-                            <button
-                              onClick={() => updateCondition(ruleIdx, groupKey, condIdx, 'mode', 'count')}
-                              style={{
-                                padding: '0.4rem 0.8rem',
-                                background: cond.mode !== 'repeat' ? '#007bff' : 'white',
-                                color: cond.mode !== 'repeat' ? 'white' : '#333',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: '0.8rem'
-                              }}
-                            >
-                              Count
-                            </button>
-                            <button
-                              onClick={() => updateCondition(ruleIdx, groupKey, condIdx, 'mode', 'repeat')}
-                              style={{
-                                padding: '0.4rem 0.8rem',
-                                background: cond.mode === 'repeat' ? '#007bff' : 'white',
-                                color: cond.mode === 'repeat' ? 'white' : '#333',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: '0.8rem'
-                              }}
-                            >
-                              Repeat
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Count Label */}
-                        <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#555' }}>
-                          {cond.mode === 'repeat' ? 'Repeat Count:' : 'Total Count:'}
-                        </span>
-
                         <select
-                          value={
-                            cond.mode === 'repeat'
-                              ? cond.repeatOperator || '=='
-                              : cond.countOperator || '=='
-                          }
-                          onChange={(e) =>
-                            updateCondition(
-                              ruleIdx,
-                              groupKey,
-                              condIdx,
-                              cond.mode === 'repeat' ? 'repeatOperator' : 'countOperator',
-                              e.target.value
-                            )
-                          }
-
+                          value={Object.keys(event.count)[0] || '=='}
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'countOperator', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
@@ -1323,18 +1270,10 @@ export default function RuleBuilder() {
                         </select>
                         <input
                           type="number"
-                          placeholder={cond.mode === 'repeat' ? 'Repeat Count' : 'Total Count'}
-                          value={cond.mode === 'repeat' ? cond.repeat || '' : cond.count || ''}
-                          onChange={(e) =>
-                            updateCondition(
-                              ruleIdx,
-                              groupKey,
-                              condIdx,
-                              cond.mode === 'repeat' ? 'repeat' : 'count',
-                              e.target.value
-                            )
-                          }
-                          style={{
+                          placeholder="Count"
+                          value={Object.values(event.count)[0] || ''}
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count', e.target.value)}
+                          style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
                             border: '1px solid #ddd',
