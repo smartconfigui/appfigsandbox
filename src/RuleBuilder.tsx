@@ -212,6 +212,8 @@ export default function RuleBuilder() {
             events: (r.conditions?.events || []).map((e: any) => ({
               key: e.key || '',
               count: e.count || { '==': 1 },
+              repeat: e.repeat || { '==': 1 },
+              useRepeat: !!e.repeat,
               within_last_days: e.within_last_days || '',
               param: e.param || {},
               not: !!e.not
@@ -294,7 +296,7 @@ export default function RuleBuilder() {
         events: rule.conditions.events?.map((e) => {
           const event: any = {
             key: e.key,
-            count: e.count,
+            ...(e.useRepeat ? { repeat: e.repeat } : { count: e.count }),
             not: e.not
           };
           if (e.within_last_days && e.within_last_days !== '') {
@@ -445,6 +447,8 @@ export default function RuleBuilder() {
     updated[ruleIdx].conditions.events!.push({
       key: '',
       count: { '==': 1 },
+      repeat: { '==': 1 },
+      useRepeat: false,
       within_last_days: '',
       param: {},
       not: false
@@ -464,12 +468,34 @@ export default function RuleBuilder() {
     
     if (field === 'key') {
       condition.key = value;
-    } else if (field === 'count') {
-      const operator = Object.keys(condition.count)[0] || '==';
-      condition.count = { [operator]: Number(value) };
-    } else if (field === 'countOperator') {
+    } else if (field === 'useRepeat') {
+      condition.useRepeat = value;
+      // When switching modes, preserve the current value but change the field name
+      const currentOperator = Object.keys(condition.count)[0] || '==';
       const currentValue = Object.values(condition.count)[0] || 1;
-      condition.count = { [value]: currentValue };
+      if (value) {
+        // Switch to repeat mode
+        condition.repeat = { [currentOperator]: currentValue };
+        delete condition.count;
+      } else {
+        // Switch to count mode
+        condition.count = { [currentOperator]: currentValue };
+        delete condition.repeat;
+      }
+    } else if (field === 'count') {
+      const operator = Object.keys(condition.useRepeat ? condition.repeat || {} : condition.count)[0] || '==';
+      if (condition.useRepeat) {
+        condition.repeat = { [operator]: Number(value) };
+      } else {
+        condition.count = { [operator]: Number(value) };
+      }
+    } else if (field === 'countOperator') {
+      const currentValue = Object.values(condition.useRepeat ? condition.repeat || {} : condition.count)[0] || 1;
+      if (condition.useRepeat) {
+        condition.repeat = { [value]: currentValue };
+      } else {
+        condition.count = { [value]: currentValue };
+      }
     } else if (field === 'within_last_days') {
       condition.within_last_days = value;
     } else if (field === 'not') {
@@ -1254,50 +1280,26 @@ export default function RuleBuilder() {
                           ))}
                         </select>
                         
-                        <select
-                          value={Object.keys(event.count)[0] || '=='}
-                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'countOperator', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            fontSize: '0.9rem'
-                          }}
-                        >
-                          {eventOperators.map((op) => (
-                            <option key={op} value={op}>{op}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          placeholder="Count"
-                          value={Object.values(event.count)[0] || ''}
-                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count', e.target.value)}
-                          style={{ 
-                            padding: '0.5rem',
-                            borderRadius: '6px',
-                            border: '1px solid #ddd',
-                            width: '80px',
-                            fontSize: '0.9rem'
-                          }}
-                        />
-                        
                         <label style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
                           gap: '0.5rem',
-                          cursor: 'pointer'
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          fontWeight: '600',
+                          color: '#555'
                         }}>
                           <input
                             type="checkbox"
-                            checked={event.useRepeat}
+                            checked={event.useRepeat || false}
                             onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'useRepeat', e.target.checked)}
                             style={{ transform: 'scale(1.1)' }}
                           />
                           {event.useRepeat ? 'Repeat:' : 'Count:'}
                         </label>
+                        
                         <select
-                          value={Object.keys(event.count)[0] || '=='}
+                          value={Object.keys(event.useRepeat ? event.repeat || {} : event.count)[0] || '=='}
                           onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'countOperator', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
@@ -1312,8 +1314,8 @@ export default function RuleBuilder() {
                         </select>
                         <input
                           type="number"
-                          placeholder="Count"
-                          value={Object.values(event.count)[0] || ''}
+                          placeholder={event.useRepeat ? "Repeat" : "Count"}
+                          value={Object.values(event.useRepeat ? event.repeat || {} : event.count)[0] || ''}
                           onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
