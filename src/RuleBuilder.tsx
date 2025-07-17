@@ -469,10 +469,10 @@ export default function RuleBuilder() {
     if (field === 'key') {
       condition.key = value;
     } else if (field === 'useRepeat') {
-      condition.useRepeat = value;
+      const operator = condition.count ? Object.keys(condition.count)[0] : '==';
       // When switching modes, preserve the current value but change the field name
       const currentOperator = Object.keys(condition.count)[0] || '==';
-      const currentValue = Object.values(condition.count)[0] || 1;
+      const currentValue = condition.count ? Object.values(condition.count)[0] : 1;
       if (value) {
         // Switch to repeat mode
         condition.repeat = { [currentOperator]: currentValue };
@@ -489,12 +489,18 @@ export default function RuleBuilder() {
       } else {
         condition.count = { [operator]: Number(value) };
       }
-    } else if (field === 'countOperator') {
+      const operator = condition.repeat ? Object.keys(condition.repeat)[0] : '==';
       const currentValue = Object.values(condition.useRepeat ? condition.repeat || {} : condition.count)[0] || 1;
       if (condition.useRepeat) {
-        condition.repeat = { [value]: currentValue };
+      const currentValue = condition.repeat ? Object.values(condition.repeat)[0] : 1;
       } else {
         condition.count = { [value]: currentValue };
+      }
+      // Initialize the appropriate field if it doesn't exist
+      if (value && !condition.repeat) {
+        condition.repeat = { '==': 1 };
+      } else if (!value && !condition.count) {
+        condition.count = { '==': 1 };
       }
     } else if (field === 'within_last_days') {
       condition.within_last_days = value;
