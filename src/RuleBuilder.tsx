@@ -1290,11 +1290,11 @@ export default function RuleBuilder() {
                         }}>
                           <input
                             type="checkbox"
-                            checked={cond.isRepeatMode}
-                            onChange={(e) => updateCondition(ruleIdx, condIdx, 'isRepeatMode', e.target.checked)}
+                            checked={event.useRepeat}
+                            onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'useRepeat', e.target.checked)}
                             style={{ transform: 'scale(1.1)' }}
                           />
-                          {cond.isRepeatMode ? 'Repeat:' : 'Count:'}
+                          {event.useRepeat ? 'Repeat:' : 'Count:'}
                         </label>
                         <select
                           value={Object.keys(event.count)[0] || '=='}
