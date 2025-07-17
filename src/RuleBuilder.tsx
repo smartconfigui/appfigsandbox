@@ -1286,27 +1286,58 @@ export default function RuleBuilder() {
                           ))}
                         </select>
                         
-                        <label style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '0.5rem',
-                          cursor: 'pointer',
-                          fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: '#555'
+                        {/* Pill-style Count/Repeat Toggle */}
+                        <div style={{
+                          display: 'flex',
+                          background: '#f0f2f5',
+                          borderRadius: '20px',
+                          padding: '2px',
+                          position: 'relative'
                         }}>
-                          <input
-                            type="checkbox"
-                            checked={event.useRepeat || false}
-                            onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'useRepeat', e.target.checked)}
-                            style={{ transform: 'scale(1.1)' }}
-                          />
-                          {event.useRepeat ? 'Repeat:' : 'Count:'}
-                        </label>
+                          <button
+                            type="button"
+                            onClick={() => updateEventCondition(ruleIdx, eventIdx, 'useRepeat', false)}
+                            style={{
+                              padding: '0.4rem 1rem',
+                              borderRadius: '18px',
+                              border: 'none',
+                              background: !event.useRepeat ? '#667eea' : 'transparent',
+                              color: !event.useRepeat ? 'white' : '#666',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              zIndex: 1
+                            }}
+                          >
+                            Count
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateEventCondition(ruleIdx, eventIdx, 'useRepeat', true)}
+                            style={{
+                              padding: '0.4rem 1rem',
+                              borderRadius: '18px',
+                              border: 'none',
+                              background: event.useRepeat ? '#667eea' : 'transparent',
+                              color: event.useRepeat ? 'white' : '#666',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              zIndex: 1
+                            }}
+                          >
+                            Repeat
+                          </button>
+                        </div>
                         
                         <select
-                          value={Object.keys(event.useRepeat ? event.repeat || {} : event.count)[0] || '=='}
-                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'countOperator', e.target.value)}
+                          value={event.useRepeat 
+                            ? (event.repeat ? Object.keys(event.repeat)[0] : '==')
+                            : (event.count ? Object.keys(event.count)[0] : '==')
+                          }
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, event.useRepeat ? 'repeatOperator' : 'countOperator', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
@@ -1321,8 +1352,11 @@ export default function RuleBuilder() {
                         <input
                           type="number"
                           placeholder={event.useRepeat ? "Repeat" : "Count"}
-                          value={Object.values(event.useRepeat ? event.repeat || {} : event.count)[0] || ''}
-                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count', e.target.value)}
+                          value={event.useRepeat 
+                            ? (event.repeat ? Object.values(event.repeat)[0] : '')
+                            : (event.count ? Object.values(event.count)[0] : '')
+                          }
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, event.useRepeat ? 'repeat' : 'count', e.target.value)}
                           style={{ 
                             padding: '0.5rem',
                             borderRadius: '6px',
