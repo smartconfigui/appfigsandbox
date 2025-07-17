@@ -1282,6 +1282,48 @@ export default function RuleBuilder() {
                           }}
                         />
                         
+                        <label style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '0.5rem',
+                          cursor: 'pointer'
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={cond.isRepeatMode}
+                            onChange={(e) => updateCondition(ruleIdx, condIdx, 'isRepeatMode', e.target.checked)}
+                            style={{ transform: 'scale(1.1)' }}
+                          />
+                          {cond.isRepeatMode ? 'Repeat:' : 'Count:'}
+                        </label>
+                        <select
+                          value={Object.keys(event.count)[0] || '=='}
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'countOperator', e.target.value)}
+                          style={{ 
+                            padding: '0.5rem',
+                            borderRadius: '6px',
+                            border: '1px solid #ddd',
+                            fontSize: '0.9rem'
+                          }}
+                        >
+                          {eventOperators.map((op) => (
+                            <option key={op} value={op}>{op}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="Count"
+                          value={Object.values(event.count)[0] || ''}
+                          onChange={(e) => updateEventCondition(ruleIdx, eventIdx, 'count', e.target.value)}
+                          style={{ 
+                            padding: '0.5rem',
+                            borderRadius: '6px',
+                            border: '1px solid #ddd',
+                            width: '80px',
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                        
                         <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#555' }}>
                           Within Days:
                         </span>
