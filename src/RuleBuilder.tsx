@@ -1370,7 +1370,7 @@ export default function RuleBuilder() {
                               fontSize: '0.8rem',
                               fontWeight: '600',
                              background: !!event.useRepeat ? '#4285f4' : 'transparent',
-                             color: !!event.useRepeat ? 'white' : '#5f6368'
+                             color: !!event.useRepeat ? 'white' : '#5f6368',
                               zIndex: 1
                             }}
                           >
