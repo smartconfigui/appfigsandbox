@@ -59,6 +59,7 @@ const prebuiltTemplates = [
             {
               key: 'level_complete',
               count: { '==': 3 },
+              useRepeat: false,
               within_last_days: 7,
               param: {
                 reason: { in: ['timeout', 'manual'] }
@@ -212,6 +213,8 @@ export default function RuleBuilder() {
             events: (r.conditions?.events || []).map((e: any) => ({
               key: e.key || '',
               count: e.count || { '==': 1 },
+              repeat: e.repeat || { '==': 1 },
+              useRepeat: !!e.useRepeat,
               repeat: e.repeat || { '==': 1 },
               useRepeat: !!e.repeat,
               within_last_days: e.within_last_days || '',
@@ -451,6 +454,8 @@ export default function RuleBuilder() {
       useRepeat: false,
       repeat: { '==': 1 },
       useRepeat: false,
+      repeat: { '==': 1 },
+      useRepeat: false,
       within_last_days: '',
       param: {},
       not: false
@@ -470,7 +475,32 @@ export default function RuleBuilder() {
     
     if (field === 'key') {
       condition.key = value;
-    } else if (field === 'useRepeat') {
+    } else if (field === 'toggleMode') {
+      // Handle switching between count and repeat modes
+      if (value === 'count') {
+        condition.useRepeat = false;
+        // Preserve operator and value when switching modes
+        if (condition.repeat && !condition.count) {
+          const operator = Object.keys(condition.repeat)[0] || '==';
+          const currentValue = Object.values(condition.repeat)[0] || 1;
+          condition.count = { [operator]: currentValue };
+        }
+        if (!condition.count) {
+          condition.count = { '==': 1 };
+        }
+      } else if (value === 'repeat') {
+        condition.useRepeat = true;
+        // Preserve operator and value when switching modes
+        if (condition.count && !condition.repeat) {
+          const operator = Object.keys(condition.count)[0] || '==';
+          const currentValue = Object.values(condition.count)[0] || 1;
+          condition.repeat = { [operator]: currentValue };
+        }
+        if (!condition.repeat) {
+          condition.repeat = { '==': 1 };
+        }
+      }
+    } else if (field === 'count') {
       if (condition.useRepeat) {
         const operator = condition.repeat ? Object.keys(condition.repeat)[0] : '==';
         condition.repeat = { [operator]: Number(value) };
@@ -522,18 +552,6 @@ export default function RuleBuilder() {
         ? (condition.repeat ? Object.keys(condition.repeat)[0] : '==')
         : (condition.count ? Object.keys(condition.count)[0] : '==');
       const currentValue = condition.useRepeat
-        ? (condition.repeat ? Object.values(condition.repeat)[0] : 1)
-        : (condition.count ? Object.values(condition.count)[0] : 1);
-      
-      if (value === 'repeat') {
-        condition.useRepeat = true;
-        condition.repeat = { [currentOperator]: Number(currentValue) };
-        delete condition.count;
-      } else {
-        condition.useRepeat = false;
-        condition.count = { [currentOperator]: Number(currentValue) };
-        delete condition.repeat;
-      }
     }
     
     setRuleSets(updated);
@@ -1329,8 +1347,8 @@ export default function RuleBuilder() {
                               padding: '0.4rem 1rem',
                               borderRadius: '18px',
                               border: 'none',
-                              background: !event.useRepeat ? '#667eea' : 'transparent',
-                              color: !event.useRepeat ? 'white' : '#666',
+                             background: !event.useRepeat ? '#667eea' : 'transparent',
+                             color: !event.useRepeat ? 'white' : '#666',
                               fontSize: '0.8rem',
                               fontWeight: '600',
                               cursor: 'pointer',
@@ -1347,8 +1365,8 @@ export default function RuleBuilder() {
                               padding: '0.4rem 1rem',
                               borderRadius: '18px',
                               border: 'none',
-                              background: event.useRepeat ? '#667eea' : 'transparent',
-                              color: event.useRepeat ? 'white' : '#666',
+                             background: !!event.useRepeat ? '#667eea' : 'transparent',
+                             color: !!event.useRepeat ? 'white' : '#666',
                               fontSize: '0.8rem',
                               fontWeight: '600',
                              background: !!event.useRepeat ? '#4285f4' : 'transparent',
