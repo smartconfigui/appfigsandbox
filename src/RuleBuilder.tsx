@@ -469,27 +469,35 @@ export default function RuleBuilder() {
     if (field === 'key') {
       condition.key = value;
     } else if (field === 'useRepeat') {
-      const operator = condition.count ? Object.keys(condition.count)[0] : '==';
-      // When switching modes, preserve the current value but change the field name
-      const currentOperator = Object.keys(condition.count)[0] || '==';
-      const currentValue = condition.count ? Object.values(condition.count)[0] : 1;
-      if (value) {
-        // Switch to repeat mode
-        condition.repeat = { [currentOperator]: currentValue };
-        delete condition.count;
-      } else {
-        // Switch to count mode
-        condition.count = { [currentOperator]: currentValue };
-        delete condition.repeat;
-      }
-    } else if (field === 'count') {
-      const operator = Object.keys(condition.useRepeat ? condition.repeat || {} : condition.count)[0] || '==';
       if (condition.useRepeat) {
+        const operator = condition.repeat ? Object.keys(condition.repeat)[0] : '==';
         condition.repeat = { [operator]: Number(value) };
       } else {
+        const operator = condition.count ? Object.keys(condition.count)[0] : '==';
         condition.count = { [operator]: Number(value) };
       }
-      const operator = condition.repeat ? Object.keys(condition.repeat)[0] : '==';
+    } else if (field === 'countOperator') {
+      if (condition.useRepeat) {
+        const currentValue = condition.repeat ? Object.values(condition.repeat)[0] : 1;
+        condition.repeat = { [value]: currentValue };
+      } else {
+        const currentValue = condition.count ? Object.values(condition.count)[0] : 1;
+        condition.count = { [value]: currentValue };
+      }
+    } else if (field === 'useRepeat') {
+      if (value) {
+        // Switching to repeat mode
+        const countOperator = condition.count ? Object.keys(condition.count)[0] : '==';
+        const countValue = condition.count ? Object.values(condition.count)[0] : 1;
+        condition.repeat = { [countOperator]: countValue };
+        condition.useRepeat = true;
+      } else {
+        // Switching to count mode
+        const repeatOperator = condition.repeat ? Object.keys(condition.repeat)[0] : '==';
+        const repeatValue = condition.repeat ? Object.values(condition.repeat)[0] : 1;
+        condition.count = { [repeatOperator]: repeatValue };
+        condition.useRepeat = false;
+      }
       const currentValue = Object.values(condition.useRepeat ? condition.repeat || {} : condition.count)[0] || 1;
       if (condition.useRepeat) {
       const currentValue = condition.repeat ? Object.values(condition.repeat)[0] : 1;
