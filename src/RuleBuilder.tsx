@@ -55,7 +55,7 @@ const prebuiltTemplates = [
         value: 'retro',
         sequential: true,
         conditions: {
-          events: [],
+          events: [
             {
               key: 'level_complete',
               count: { '==': 3 },
@@ -65,8 +65,7 @@ const prebuiltTemplates = [
               param: {
                 reason: { in: ['timeout', 'manual'] }
               },
-              not: false,
-              useRepeat: false
+              not: false
             }
           ],
           user_properties: [
@@ -216,14 +215,10 @@ export default function RuleBuilder() {
               key: e.key || '',
               count: e.count || { '==': 1 },
               repeat: e.repeat || { '==': 1 },
-              repeat: e.repeat || { '==': 1 },
               useRepeat: !!e.useRepeat,
-              repeat: e.repeat || { '==': 1 },
-              useRepeat: !!e.repeat,
               within_last_days: e.within_last_days || '',
               param: e.param || {},
-              not: !!e.not,
-              useRepeat: !!e.useRepeat
+              not: !!e.not
             })),
             user_properties: (r.conditions?.user_properties || []).map((u: any) => ({
               key: u.key || '',
@@ -455,16 +450,10 @@ export default function RuleBuilder() {
       key: '',
       count: { '==': 1 },
       repeat: { '==': 1 },
-      repeat: { '==': 1 },
-      useRepeat: false,
-      repeat: { '==': 1 },
-      useRepeat: false,
-      repeat: { '==': 1 },
       useRepeat: false,
       within_last_days: '',
       param: {},
-      not: false,
-      useRepeat: false
+      not: false
     });
     setRuleSets(updated);
   };
@@ -536,12 +525,6 @@ export default function RuleBuilder() {
         condition.count = { [repeatOperator]: repeatValue };
         condition.useRepeat = false;
       }
-      const currentValue = Object.values(condition.useRepeat ? condition.repeat || {} : condition.count)[0] || 1;
-      if (condition.useRepeat) {
-      const currentValue = condition.repeat ? Object.values(condition.repeat)[0] : 1;
-      } else {
-        condition.count = { [value]: currentValue };
-      }
       // Initialize the appropriate field if it doesn't exist
       if (value && !condition.repeat) {
         condition.repeat = { '==': 1 };
@@ -552,12 +535,6 @@ export default function RuleBuilder() {
       condition.within_last_days = value;
     } else if (field === 'not') {
       condition.not = value;
-    } else if (field === 'toggleMode') {
-      // Handle toggle between count and repeat
-      const currentOperator = condition.useRepeat 
-        ? (condition.repeat ? Object.keys(condition.repeat)[0] : '==')
-        : (condition.count ? Object.keys(condition.count)[0] : '==');
-      const currentValue = condition.useRepeat
     }
     
     setRuleSets(updated);
@@ -1348,35 +1325,32 @@ export default function RuleBuilder() {
                         }}>
                           <button
                             type="button"
-                           onClick={() => updateEventCondition(ruleIdx, eventIdx, 'toggleMode', 'count')}
+                            onClick={() => updateEventCondition(ruleIdx, eventIdx, 'toggleMode', 'count')}
                             style={{
                               padding: '0.4rem 1rem',
                               borderRadius: '18px',
                               border: 'none',
-                             background: !event.useRepeat ? '#667eea' : 'transparent',
-                             color: !event.useRepeat ? 'white' : '#666',
+                              background: !event.useRepeat ? '#4285f4' : 'transparent',
+                              color: !event.useRepeat ? 'white' : '#5f6368',
                               fontSize: '0.8rem',
                               fontWeight: '600',
-                              cursor: 'pointer',
-                             background: !event.useRepeat ? '#4285f4' : 'transparent',
-                             color: !event.useRepeat ? 'white' : '#5f6368'
+                              cursor: 'pointer'
                             }}
                           >
                             Count
                           </button>
                           <button
                             type="button"
-                           onClick={() => updateEventCondition(ruleIdx, eventIdx, 'toggleMode', 'repeat')}
+                            onClick={() => updateEventCondition(ruleIdx, eventIdx, 'toggleMode', 'repeat')}
                             style={{
                               padding: '0.4rem 1rem',
                               borderRadius: '18px',
                               border: 'none',
-                             background: !!event.useRepeat ? '#667eea' : 'transparent',
-                             color: !!event.useRepeat ? 'white' : '#666',
+                              background: !!event.useRepeat ? '#4285f4' : 'transparent',
+                              color: !!event.useRepeat ? 'white' : '#5f6368',
                               fontSize: '0.8rem',
                               fontWeight: '600',
-                             background: !!event.useRepeat ? '#4285f4' : 'transparent',
-                             color: !!event.useRepeat ? 'white' : '#5f6368',
+                              cursor: 'pointer',
                               zIndex: 1
                             }}
                           >
