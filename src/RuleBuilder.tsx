@@ -499,10 +499,8 @@ export default function RuleBuilder() {
       if (condition.useRepeat) {
         const operator = condition.repeat ? Object.keys(condition.repeat)[0] : '==';
         condition.repeat = { [operator]: Number(value) };
-      } else {
-        const operator = condition.count ? Object.keys(condition.count)[0] : '==';
-        condition.count = { [operator]: Number(value) };
-      }
+      const operator = condition.repeat ? Object.keys(condition.repeat)[0] : '>=';
+      condition.repeat = { [operator]: Number(value) };
     } else if (field === 'countOperator') {
       if (condition.useRepeat) {
         const currentValue = condition.repeat ? Object.values(condition.repeat)[0] : 1;
