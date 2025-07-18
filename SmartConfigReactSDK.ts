@@ -10,6 +10,7 @@ export type SmartEvent = {
 export type Condition = {
   key: string;
   count?: Record<string, number | string | string[]>;
+  repeat?: Record<string, number | string | string[]>;
   param?: Record<string, Record<string, any>>;
   within_last_days?: number;
   not?: boolean;
@@ -257,6 +258,15 @@ class SmartConfigCore {
       }
     }
 
+    // Repeat matching - consecutive occurrences
+    if ('repeat' in cond && cond.repeat) {
+      const maxConsecutive = this.getMaxConsecutiveOccurrences(cond.key);
+      
+      for (const op in cond.repeat) {
+        match = match && this.compare(op, maxConsecutive, cond.repeat[op]);
+      }
+    }
+
     
 
     // Value matching (for device and user_properties)
@@ -281,6 +291,27 @@ class SmartConfigCore {
     return match;
   }
 
+  private getMaxConsecutiveOccurrences(eventName: string): number {
+    let maxConsecutive = 0;
+    let currentConsecutive = 0;
+    
+    // Sort events by timestamp to ensure chronological order
+    const sortedEvents = [...this.eventHistory].sort((a, b) => a.timestamp - b.timestamp);
+    
+    for (let i = 0; i < sortedEvents.length; i++) {
+      const event = sortedEvents[i];
+      
+      if (event.name === eventName) {
+        currentConsecutive++;
+        maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
+      } else {
+        // Reset consecutive count when a different event occurs
+        currentConsecutive = 0;
+      }
+    }
+    
+    return maxConsecutive;
+  }
   private compare(op: string, actual: any, expected: any): boolean {
     switch (op) {
       case '==': return actual === expected;
